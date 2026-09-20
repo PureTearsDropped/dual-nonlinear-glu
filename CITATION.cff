@@ -2,6 +2,8 @@ cff-version: 1.2.0
 title: "dual-nonlinear-glu: revisiting the linear value branch of gated layers"
 message: "If you use this work, please cite it using these metadata."
 type: software
+version: 0.2.0
+date-released: 2026-09-20
 authors:
   - alias: PureTearsDropped
 repository-code: "https://github.com/PureTearsDropped/dual-nonlinear-glu"
@@ -14,24 +16,50 @@ abstract: >-
   because both branches contribute a gradient downscaling factor, and the
   GLU -> GEGLU -> SwiGLU line descends from that rejection. On a synthetic
   teacher-student benchmark with a residual and a 1/sqrt(depth) branch
-  initialisation, that rejection does not reproduce. Two teachers, however,
-  give opposite accounts of why: on a product teacher the effect is dual
-  nonlinearity itself (4.5x, and silu*silu ties the proposed pair), while on a
-  non-product teacher dual nonlinearity buys nothing and only the particular
-  pair helps (33%). The block's output is the mixed second derivative of an
-  elementary potential F(u)G(v), which is not the case for SwiGLU. Also
-  recorded: initialising the residual branch at 1/sqrt(depth) outweighs every
-  activation choice measured; curvature-aware ternary rounding was derived,
-  corrected, and failed; and a benchmark checklist for detecting tasks that do
-  not need depth.
+  initialisation, that rejection does not reproduce.
+
+  The larger finding is about a different property. The proposed pair f and g,
+  like max(ax,-b) and the identity, are all linear ABOVE zero, and it is that
+  linear positive half which costs. Removing it from the gate -- a plain
+  b*tanh(a x/b) on both sides -- is worth 1.5-5.9x in all four cells of two
+  teachers by two value branches; removing it from the value branch is
+  1.0-3.0x with one cell where it does nothing. The two changes are redundant
+  rather than additive. This is the one effect that two teachers giving
+  otherwise opposite accounts both support.
+
+  A control separates the mechanism. A fixed tanh, with nothing learned, keeps
+  most of the gain when the value branch is nonlinear but falls below SwiGLU
+  when it is not, because it sits in its own linear region (median argument
+  0.378) while a learned gate drives itself into saturation (median 3.2). What
+  the learned scale buys is the operating point, and that decides the outcome
+  only when the gate is the sole nonlinearity. The saturated gate is not a
+  sign function -- that was tested and is wrong, at 3.70x -- but a clamp costs
+  only 1.19x, and training with the clamp from the start costs 9%, so the gate
+  needs no transcendental at all.
+
+  Also recorded: asinh in the value branch can be evaluated by polynomials
+  alone, with segment boundaries taken from the measured argument distribution
+  rather than from the shape of asinh, reproducing a trained network's loss to
+  seven figures and costing 30x on a GPU, where it must not be used; the
+  block's output is the mixed second derivative of an elementary potential
+  F(u)G(v), which survives the both-sides form; initialising the residual
+  branch at 1/sqrt(depth) outweighs every activation choice measured;
+  curvature-aware ternary rounding was derived, corrected, and failed; and a
+  benchmark checklist for detecting tasks that do not need depth. Several
+  claims published in v0.1.0 are corrected here, including two measured
+  statements about GPU kernel cost and the attribution of a 2.1x gain to the
+  wrong one of two simultaneous changes.
 keywords:
   - activation function
   - gated linear unit
   - SwiGLU
+  - gated tanh unit
   - residual network
   - benchmark methodology
   - negative results
-  - gated tanh unit
+  - polynomial approximation
+  - Remez algorithm
+  - hardware inference
 references:
   - type: software
     title: "relu-tanh-asinh: a conjugate f/g residual layer"
