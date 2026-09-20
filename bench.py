@@ -29,6 +29,29 @@ inv = lambda v: math.log(math.expm1(max(v - 1e-4, 1e-6)))
 f_ab = lambda x, a, b: torch.where(x >= 0, a * x, b * torch.tanh(a * x / b))
 g_AB = lambda y, A, B: torch.where(y >= 0, y / A, (B / A) * torch.asinh(y / B))
 
+# Cheap replacements. f becomes a single max; g becomes one rsqrt.
+#   tanh(u) -> clamp(u,-1,1)  makes f_ab(x) = max(a x, -b) exactly
+#   asinh(u) -> u / sqrt(1 + u^2/3)
+# Branch-free forms. These kernels are bandwidth-bound, not ALU-bound: on GPU
+# `torch.asinh` costs about as much as an add. A `where` reads three tensors
+# and a condition where `asinh` reads one, and measures 1.2-2.4x an `asinh`
+# depending on size (RTX 5090, f32, N = 65k .. 32M). Dropping a branch saves
+# tensor traffic, not arithmetic.
+#   f: tanh -> clamp makes the two branches collapse into one max
+#   g: apply asinh on both sides, dropping the branch (this changes the
+#      function -- the positive side is compressed too)
+f_hard = lambda x, a, b: torch.maximum(a * x, -b)
+g_alg  = lambda y, A, B: (B / A) * torch.asinh(y / B)
+
+# Piecewise asinh -- polynomials only, for hardware with no transcendental
+# unit. Imported rather than copied so the coefficients have one home.
+# These are the *same* functions as g_alg / g_AB to within 1e-7, not cheaper
+# variants: on a GPU they are ~30x slower. See APPROX.md.
+from dnglu import asinh_pw
+g_pw   = lambda y, A, B: (B / A) * asinh_pw(y / B)                       # = g_alg
+g_ABpw = lambda y, A, B: torch.where(y >= 0, y / A,
+                                     (B / A) * asinh_pw(y / B))          # = g_AB
+
 
 class Teacher(nn.Module):
     """kind: tanh / relu / gelu products, or `deep` (an iterated map, no product)."""
@@ -88,6 +111,8 @@ class Gated(_Stack):
 
     def _br(self, t, which, a, b, A, B):
         return {"f": lambda: f_ab(t, a, b), "g": lambda: g_AB(t, A, B),
+                "F": lambda: f_hard(t, a, b), "G": lambda: g_alg(t, A, B),
+                "p": lambda: g_pw(t, A, B),  "P": lambda: g_ABpw(t, A, B),
                 "s": lambda: F.silu(t),     "i": lambda: t,
                 "r": lambda: F.relu(t),     "e": lambda: F.gelu(t)}[which]()
 
@@ -139,6 +164,9 @@ class Ablate(Gated):
 
 MODELS = {
     "fg": lambda S, **k: Gated(S, order="fg", **k),      # this work
+    "FG": lambda S, **k: Gated(S, order="FG", **k),      # cheap: max() and one rsqrt
+    "Fg": lambda S, **k: Gated(S, order="Fg", **k),      # cheap gate only
+    "fG": lambda S, **k: Gated(S, order="fG", **k),      # cheap value only
     "gf": lambda S, **k: Gated(S, order="gf", **k),
     "ff": lambda S, **k: Gated(S, order="ff", **k),
     "gg": lambda S, **k: Gated(S, order="gg", **k),
@@ -165,7 +193,7 @@ def clip_per_seed(model, S, maxnorm=5.0):
         g.mul_((maxnorm / (g.norm(dim=1, keepdim=True) + 1e-6)).clamp(max=1.0))
 
 
-def run(name, S, depth, steps, width, scaled, teacher, dev):
+def run(name, S, depth, steps, width, scaled, teacher, dev, swap_to=None):
     set_seed(1000); T = Teacher(kind=teacher).to(dev).eval()
     for p in T.parameters(): p.requires_grad_(False)
     set_seed(0)
@@ -184,6 +212,10 @@ def run(name, S, depth, steps, width, scaled, teacher, dev):
     with torch.no_grad():
         x = torch.randn(20000, DIN, device=dev); y = T(x)
         loss = ((m(x) - y[None]) ** 2).mean(dim=(1, 2)) / y.var()
+        if swap_to is not None:            # same weights, asinh -> polynomials
+            m.order = swap_to
+            loss2 = ((m(x) - y[None]) ** 2).mean(dim=(1, 2)) / y.var()
+            return [float(v) for v in loss], npar, [float(v) for v in loss2]
     return [float(v) for v in loss], npar
 
 
@@ -197,6 +229,10 @@ def main():
     ap.add_argument("--width", type=int, default=64)
     ap.add_argument("--no-scale", action="store_true",
                     help="drop the 1/sqrt(L) init on W_d (SPEC 5)")
+    ap.add_argument("--swap", action="store_true",
+                    help="after training, re-evaluate the same weights with "
+                         "asinh replaced by polynomials (same function, "
+                         "see APPROX.md)")
     ap.add_argument("--diagnose", action="store_true",
                     help="baselines that decide whether the task is usable")
     a = ap.parse_args()
@@ -207,11 +243,22 @@ def main():
     print(f"{'model':>10} {'loss':>10} {'std':>9} {'params':>10}")
     print("-" * 44)
     res = {}
+    # Function-preserving swaps: the transcendental is replaced by polynomials,
+    # the function is not changed. fg -> FG would be a different function (the
+    # value branch's positive half gets compressed), which is what RESULTS 4
+    # measures, not what --swap is for.
+    SWAP = {"FG": "Fp", "fG": "fp", "fg": "fP", "Fg": "FP"}
     for n in names:
         d = 1 if n in ("linear", "onenl") else a.depth
-        L, npar = run(n, a.seeds, d, a.steps, a.width, not a.no_scale, a.teacher, dev)
+        sw = SWAP.get(n) if a.swap else None
+        out = run(n, a.seeds, d, a.steps, a.width, not a.no_scale, a.teacher, dev, sw)
+        L, npar = out[0], out[1]
         res[n] = (np.mean(L), np.std(L, ddof=1))
-        print(f"{n:>10} {np.mean(L):10.5f} {np.std(L, ddof=1):9.5f} {npar:10,}")
+        line = f"{n:>10} {np.mean(L):10.5f} {np.std(L, ddof=1):9.5f} {npar:10,}"
+        if len(out) > 2:
+            L2 = out[2]
+            line += f"   swapped: {np.mean(L2):.5f} ({(np.mean(L2)-np.mean(L))/np.mean(L)*100:+.1f}%)"
+        print(line)
     if a.diagnose:
         v = res["onenl"][0] / res["gelu"][0]
         print(f"\ndepth value = {v:.2f}  "

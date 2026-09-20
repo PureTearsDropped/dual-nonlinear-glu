@@ -73,6 +73,10 @@ resembling it. On an iterated map with no product at all, depth 16, 8 seeds:
 **silu⊙silu no longer beats SwiGLU.** Making the value branch nonlinear buys
 nothing here; only $f\odot g$ does.
 
+$f\odot g$ is not the best configuration on this teacher, though — section 4
+splits it into its two ingredients and reaches 0.02506, another 2.1× below the
+row above.
+
 | | $\tanh$ product | iterated map |
 |---|---|---|
 |value branch nonlinear at all|**4.5×**|**nothing**|
@@ -90,7 +94,33 @@ Earlier measurements at a smaller scope, kept for the record:
 |$\tanh$ product (depth 32)|4.5×|
 |iterated map (depth 16)|1.33×|
 
-## 4. Two explanations tested and eliminated
+## 4. Which half of $f\odot g$ does the work
+
+$f\odot g$ has two ingredients that are easy to change together: the gate's
+$\tanh$ shoulder and the value branch's one-sided $\operatorname{asinh}$. Changing
+one at a time, depth 16, 8 seeds, iterated-map teacher:
+
+| | gate | value | loss | vs best |
+|---|---|---|---|---|
+|$F\odot G$|$\max(ax,-b)$|$\operatorname{asinh}$ both sides|**0.02506 ± 0.00055**|—|
+|$f\odot G$|$f$ exact|$\operatorname{asinh}$ both sides|0.02607 ± 0.00074|+4.0%|
+|$F\odot g$|$\max(ax,-b)$|$g$ exact|0.05071 ± 0.00103|+102%|
+|$f\odot g$|$f$ exact|$g$ exact|0.05236 ± 0.00117|+109%|
+
+**The value branch's positive half is the whole effect.** Compressing it as well
+as the negative half — $\operatorname{asinh}$ on both sides instead of a linear
+positive side — is worth 2.1×. Replacing the gate's $\tanh$ with a plain
+$\max(ax,-b)$ is worth 4%, in the same direction.
+
+This was first read the wrong way round. $F\odot G$ beat $f\odot g$ by 2.1× and
+the gain was attributed to $\max(ax,-b)$, because both changes were made at
+once. The rows above are the same run with the two changes separated.
+
+A consequence for the gate: if $\max$ is worth 4%, the gate's exact shape is
+nearly free to choose, and `silu` is a candidate there ($\mathrm{silu}\odot G$).
+That has not been measured.
+
+## 5. Two explanations tested and eliminated
 
 **Activation growth with depth** — no. Per-layer statistics at depths 4/16/32:
 
@@ -117,7 +147,7 @@ scales changes nothing:
 |SwiGLU + per-channel scales|0.07204 ± 0.00084|
 |$f\odot g$|**0.01587 ± 0.00059**|
 
-## 5. Depth
+## 6. Depth
 
 $\tanh$-product teacher, 8 seeds, $L^{-1/2}$ initialisation throughout:
 
@@ -129,7 +159,7 @@ $\tanh$-product teacher, 8 seeds, $L^{-1/2}$ initialisation throughout:
 **9% at depth 4 becomes 4.5× at depth 32.** Without the $L^{-1/2}$ init, SwiGLU
 does not reach depth 16 at all (NaN), and plain MLPs lose 30–41% (SPEC 5).
 
-## 6. Curvature-aware ternary rounding: tried, failed
+## 7. Curvature-aware ternary rounding: tried, failed
 
 Rank weights by a second-order estimate of the cost of rounding them, keep the
 top $k$ per row, so the sparsity is identical across criteria. Depth 16, 8 seeds,
@@ -164,7 +194,7 @@ the remaining weights after each rounding; and $v$ is large for weights that are
 still *moving*, not for weights that are *important*. **Magnitude is the best
 criterion tried.**
 
-## 7. What this does not show
+## 8. What this does not show
 
 - one task family (synthetic regression, width 64, input dim 32); **no language,
   no vision, no real data**
@@ -183,7 +213,7 @@ criterion tried.**
 - no comparison against LayerNorm'd blocks, which is how real transformers avoid
   the instability that forced the $L^{-1/2}$ init here
 
-## 8. Reproducing
+## 9. Reproducing
 
 ```bash
 python bench.py --diagnose                       # baselines: is the task usable?

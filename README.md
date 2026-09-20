@@ -117,7 +117,7 @@ and no stability guarantee follows.
   regulariser or objective**
 - $a,b,A,B$ barely move during training — the initialisation does the work, and
   it is not understood why the learning does not use those degrees of freedom
-- curvature-aware ternary rounding was tried and **failed** (RESULTS 6)
+- curvature-aware ternary rounding was tried and **failed** (RESULTS 7)
 - no comparison against LayerNorm'd blocks, which is how real transformers avoid
   the instability that forced the $1/\sqrt{L}$ init here
 
@@ -125,10 +125,11 @@ and no stability guarantee follows.
 
 | | |
 |---|---|
-|[`dnglu.py`](dnglu.py)|reference implementation, ~120 lines|
+|[`dnglu.py`](dnglu.py)|reference implementation|
 |[`SPEC.md`](SPEC.md)|construction, initialisation, the potential, diagnostics|
 |[`RESULTS.md`](RESULTS.md)|all measurements, what was ruled out, what failed|
 |[`bench.py`](bench.py)|benchmark with every baseline above|
+|[`APPROX.md`](APPROX.md)|asinh by polynomials only, for hardware without a transcendental unit|
 
 ```python
 from dnglu import DualGLUNet
