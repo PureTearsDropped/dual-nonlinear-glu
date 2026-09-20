@@ -24,6 +24,8 @@ learned per channel and kept positive by softplus.
 |`T`|`b tanh(a x / b)`|tanh on both sides — bounded above **and** below|
 |`F`|`max(a x, -b)`|linear above, clamped to `-b` below|
 |`f`|`a x` for `x>=0`, `b tanh(a x / b)` for `x<0`|linear above, tanh below — the gate specified in SPEC.md|
+|`t`|`tanh(x)`|the same shape with nothing learned — control for `T`|
+|`C`|`clamp(a x, -b, b)`|piecewise-linear `T`; no transcendental|
 |`s`|`silu(x)`|what SwiGLU uses|
 |`i`|`x`|identity|
 
@@ -152,6 +154,8 @@ All 8 seeds, parameter-matched.
 | gate | value | loss | |
 |---|---|---|---|
 |`T`|`G`|**0.00162 ± 0.00011**|—|
+|`t`|`G`|0.00277 ± 0.00012|+71% (20 σ) — gate fixed, nothing learned in it|
+|`C`|`G`|0.00326 ± 0.00011|+101% (30 σ) — gate is a clamp, no transcendental|
 |`T`|`g`|0.00483 ± 0.00020|+198% (40 σ)|
 |`T`|`i`|0.00511 ± 0.00010|+215%|
 |`F`|`G`|0.00886 ± 0.00019|+447% (93 σ)|
@@ -159,6 +163,7 @@ All 8 seeds, parameter-matched.
 |`s`|`s`|0.01566 ± 0.00086|+867%|
 |`f`|`g`|0.01575 ± 0.00064|+872%|
 |`F`|`g`|0.01848 ± 0.00048|+1041%|
+|`t`|`i`|0.01907 ± 0.00113|+1077%|
 |`s`|`i` — SwiGLU|0.07117 ± 0.00031|+4294%|
 
 **iterated-map teacher, depth 16**
@@ -167,12 +172,17 @@ All 8 seeds, parameter-matched.
 |---|---|---|---|
 |`T`|`g`|**0.01676 ± 0.00073**|—|
 |`T`|`G`|0.01747 ± 0.00074|+4.2% (1.9 σ — a tie)|
+|`C`|`G`|0.01902 ± 0.00046|+13% (5.0 σ) — gate is a clamp, no transcendental|
+|`t`|`G`|0.02117 ± 0.00057|+26% — gate fixed, nothing learned in it|
 |`F`|`G`|0.02506 ± 0.00055|+50% (23 σ)|
 |`f`|`G`|0.02607 ± 0.00074|+56%|
 |`T`|`i`|0.02643 ± 0.00086|+58%|
 |`F`|`g`|0.05071 ± 0.00103|+203%|
 |`f`|`g`|0.05236 ± 0.00117|+212% (73 σ)|
 |`s`|`i` — SwiGLU|0.06952 ± 0.00112|+315%|
+|`s`|`s`|0.07132 ± 0.00145|+325%|
+|`t`|`i`|0.08321 ± 0.00108|+396% — **worse than SwiGLU**|
+|`i`|`i` — bilinear|0.09263 ± 0.00034|+453%|
 
 ### What each removal is worth
 
@@ -215,13 +225,66 @@ On the iterated map:
 place. Doing both is a further 1.5×, not the 3×1.5 that independent effects
 would give.
 
-### Two things this does not establish
+### The control: boundedness, or the learned scale?
 
-**`T` carries two learned parameters where `silu` carries none.** Parameter
-counts are matched in the accounting, but `T` can learn its slope and its
-saturation level and `silu` cannot. Whether the gain comes from boundedness or
-from the learnable scale is **not separated here**; a fixed `tanh` (a = b = 1)
-would separate it and has not been run.
+`T` learns a slope and a saturation level; `silu` learns nothing. `t` is the
+control — `tanh(x)` with nothing learned. Note that `b tanh(a x / b)` equals
+`b tanh((a/b) x)`, and a per-channel gain on the gate is absorbable into `W_d`'s
+columns, so the only shape `T` can learn is the knee position `a/b`. A trained
+`TG` reaches `a/b ≈ 1.78`; `t` pins it at 1.
+
+What the learned knee is worth depends entirely on the other branch:
+
+| | fixed `t` | learned `T` | learned is worth |
+|---|---|---|---|
+|value `G`, iterated map|0.02117|0.01747|1.21×|
+|value `G`, tanh product|0.00277|0.00162|1.71×|
+|value `i`, iterated map|0.08321|0.02643|**3.15×**|
+|value `i`, tanh product|0.01907|0.00511|**3.73×**|
+
+With a nonlinear value branch the fixed gate is already most of the way there —
+`tG` at 0.02117 still beats every linear-above gate, so **boundedness alone
+buys 2.5× and the learned knee adds 1.2×**. With a linear value branch the
+fixed gate is a disaster: `ti` at 0.08321 is **worse than SwiGLU** and nearly at
+bilinear.
+
+The operating point explains it. Magnitude of the argument reaching the `tanh`,
+after 2000 steps on the iterated map (raw MSE here, not normalised):
+
+| | loss | median \|arg\| | 99th pct | median \|out\| / saturation |
+|---|---|---|---|---|
+|`ti`|0.04903|0.378|1.56|0.361|
+|`tG`|0.02302|0.904|3.68|0.718|
+|`Ti`|0.02987|3.726|18.48|0.999|
+|`TG`|0.01931|3.173|17.26|0.996|
+|`si`|0.04468|0.490|2.17|—|
+
+**A fixed `tanh` sits in its own linear region** (median argument 0.378), so with
+a linear value branch the whole block degenerates towards bilinear — which is
+where `ti` lands. The learned gates drive themselves deep into saturation
+instead. So the answer is neither "boundedness" nor "learnability" on its own:
+the learned scale is what places the operating point, and the operating point
+only decides the outcome when the gate is the sole nonlinearity.
+
+### The saturated gate is not a sign function
+
+Most of a trained `T` is saturated, which suggests it has become `b·sign(x)`.
+It has not. Taking a trained `TG` and swapping only the gate (same weights,
+raw MSE, ratios are what matter):
+
+| gate at evaluation | loss | vs trained |
+|---|---|---|
+|`b tanh(a x / b)` — as trained|0.00855|1.000×|
+|`clamp(a x, -b, b)`|0.01016|1.189×|
+|`b sign(x)`|0.03164|**3.699×**|
+
+The linear ramp through zero is doing real work; only the smooth knee above it
+is cheap. Trained *with* the clamp from the start, `CG` reaches 0.01902 on the
+iterated map (1.09× off `TG`) and 0.00326 on the tanh product (2.01× off). **The
+gate needs no transcendental at all** — two comparisons and a multiply — at a
+cost of 9% on the teacher that is not made of tanh.
+
+### Two things this does not establish
 
 **The gap against SwiGLU is largest where the teacher is a tanh product**
 (13.9× for `Ti`, against 2.6× on the iterated map). SwiGLU wins on real language

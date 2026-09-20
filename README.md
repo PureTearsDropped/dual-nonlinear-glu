@@ -36,10 +36,12 @@ h <- h + W_d ( gate(W_g h)  *  value(W_u h) )
 
 gate                                      value
   T   b tanh(a x / b)   bounded both        G   (B/A) asinh(y / B)   asinh both sides
-  F   max(a x, -b)      linear above        g   y/A        (y>=0)    linear above
-  f   a x       (x>=0)  linear above            (B/A)asinh(y/B) (y<0)
-      b tanh(a x/b) (x<0)                   s   silu(y)
-  s   silu(x)           what SwiGLU uses    i   y                    what SwiGLU uses
+  t   tanh(x)           T, nothing learned  g   y/A        (y>=0)    linear above
+  C   clamp(a x, -b, b) T, no transcendental    (B/A)asinh(y/B) (y<0)
+  F   max(a x, -b)      linear above        s   silu(y)
+  f   a x       (x>=0)  linear above        i   y                    what SwiGLU uses
+      b tanh(a x/b) (x<0)
+  s   silu(x)           what SwiGLU uses
   i   x
 ```
 
@@ -57,6 +59,8 @@ SwiGLU, `ii` is bilinear.
 | gate | value | loss | |
 |---|---|---|---|
 |`T`|`G`|**0.00162 ± 0.00011**|9.7× below silu⊙silu|
+|`t`|`G`|0.00277 ± 0.00012|gate fixed — nothing learned in it|
+|`C`|`G`|0.00326 ± 0.00011|gate is a clamp — no transcendental|
 |`T`|`g`|0.00483 ± 0.00020||
 |`T`|`i`|0.00511 ± 0.00010|bounded gate alone, value left linear|
 |`F`|`G`|0.00886 ± 0.00019||
@@ -66,6 +70,7 @@ SwiGLU, `ii` is bilinear.
 |`g`|`g`|0.01697 ± 0.00056||
 |`f`|`f`|0.01717 ± 0.00102||
 |`F`|`g`|0.01848 ± 0.00048||
+|`t`|`i`|0.01907 ± 0.00113||
 |`s`|`g`|0.01969 ± 0.00084||
 |`f`|`i`|0.04925 ± 0.00072||
 |`s`|`i` — **SwiGLU**|0.07117 ± 0.00031||
@@ -77,6 +82,8 @@ SwiGLU, `ii` is bilinear.
 |---|---|---|---|
 |`T`|`g`|**0.01676 ± 0.00073**|3.1× below `fg`|
 |`T`|`G`|0.01747 ± 0.00074|1.9 σ from the row above — a tie|
+|`C`|`G`|0.01902 ± 0.00046|gate is a clamp — no transcendental, costs 9%|
+|`t`|`G`|0.02117 ± 0.00057|gate fixed — nothing learned in it|
 |`F`|`G`|0.02506 ± 0.00055||
 |`f`|`G`|0.02607 ± 0.00074||
 |`T`|`i`|0.02643 ± 0.00086|0.9 σ from `fG` — fixing either branch alone lands here|
@@ -84,6 +91,7 @@ SwiGLU, `ii` is bilinear.
 |`f`|`g`|0.05236 ± 0.00117|the pair specified below|
 |`s`|`i` — **SwiGLU**|0.06952 ± 0.00112||
 |`s`|`s`|0.07132 ± 0.00145||
+|`t`|`i`|0.08321 ± 0.00108|**worse than SwiGLU** — see below|
 |`i`|`i` — **bilinear**|0.09263 ± 0.00034||
 
 ## What the two tables together say
@@ -124,13 +132,33 @@ positive half, so nothing downscales there, unlike $\tanh'\cdot\sigma'$ in GTU.
 The measurements above kill that guess: the best forms are `T` and `G`, which
 have *no* linear half and therefore do downscale on both sides.
 
-**Two things these tables do not establish.** `T` learns a slope and a
-saturation level; `silu` learns nothing. Parameter counts are matched, but
-whether `T` wins by being bounded or by being scalable is not separated here — a
-fixed `tanh` would separate it and has not been run. And the margin over SwiGLU
-is far larger on the $\tanh$-product teacher (13.9× for `Ti`) than on the
-iterated map (2.6×); SwiGLU beats bounded gates on real language, so a 14× the
-other way on a synthetic teacher says more about the teacher than about SwiGLU.
+**Boundedness or the learned scale?** `T` learns a slope and a saturation
+level; `silu` learns nothing. `t` — a plain `tanh(x)` — is the control. Since
+`b tanh(a x/b) = b tanh((a/b) x)` and a per-channel gain is absorbable into
+$W_d$, the only shape `T` can learn is the knee `a/b`; a trained `TG` puts it at
+about 1.78 where `t` is pinned at 1.
+
+The answer depends on the other branch. With value `G`, the fixed gate is
+already most of the way: `tG` beats every linear-above gate, so boundedness
+alone buys 2.5× and the learned knee adds 1.2×. With value `i`, the fixed gate
+is a **disaster** — `ti` is worse than SwiGLU and nearly at bilinear.
+
+The operating point explains it: a fixed `tanh` sits in its own linear region
+(median argument 0.378), so when the gate is the sole nonlinearity the block
+degenerates towards bilinear. The learned gates drive themselves into saturation
+(median argument 3.2). The learned scale's job is placing the operating point,
+and that only decides the outcome when nothing else is nonlinear. RESULTS 4.
+
+**The saturated gate is not a sign function.** Swapping a trained `T` for
+`b sign(x)` costs 3.70×; swapping it for `clamp(a x, -b, b)` costs 1.19×. The
+linear ramp through zero matters; the smooth knee above it is cheap. Trained
+with the clamp from the start, `CG` costs 9% against `TG` on the iterated map —
+**so the gate needs no transcendental at all.**
+
+**One thing these tables do not establish.** The margin over SwiGLU is far
+larger on the $\tanh$-product teacher (13.9× for `Ti`) than on the iterated map
+(2.6×); SwiGLU beats bounded gates on real language, so a 14× the other way on a
+synthetic teacher says more about the teacher than about SwiGLU.
 
 ## Prior work
 
@@ -181,9 +209,9 @@ and no stability guarantee follows.
   initial 1.0 — but under the bounded `T` gate $a$ moves to about 0.27, so
   "the initialisation does the work" is a statement about the unbounded gates,
   not a general one
-- whether `T` wins by being bounded or by learning its scale is **not
-  separated**; `silu` has no learned parameters to compare against, and a fixed
-  $\tanh$ ($a=b=1$) has not been run
+- `T`'s advantage is mostly the operating point, not boundedness as such: a
+  fixed $\tanh$ with a nonlinear value branch keeps 2.5× of the 3.0×, but with a
+  linear value branch it falls below SwiGLU
 - the margin over SwiGLU is 13.9× on the $\tanh$-product teacher and 2.6× on the
   iterated map; SwiGLU beats bounded gates on real language, so the larger
   number is most likely a property of that teacher

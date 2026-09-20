@@ -44,6 +44,14 @@ f_hard = lambda x, a, b: torch.maximum(a * x, -b)
 # Symmetric tanh gate: f with its linear positive half removed as well, so the
 # gate is bounded above too and the product cannot amplify the value branch.
 f_tan  = lambda x, a, b: b * torch.tanh(a * x / b)
+# Control for f_tan: the same shape with nothing learned. Note b*tanh(a x/b) =
+# b*tanh((a/b) x), and a per-channel gain on the gate is absorbable into W_d's
+# columns, so the only shape parameter f_tan has is the knee a/b. f_fix pins it
+# to 1 and drops the gain.
+f_fix  = lambda x, a, b: torch.tanh(x)
+# Piecewise-linear version of f_tan: same saturation, no smooth knee. Two
+# comparisons and no transcendental.
+f_clp  = lambda x, a, b: torch.clamp(a * x, -b, b)
 g_alg  = lambda y, A, B: (B / A) * torch.asinh(y / B)
 
 # Piecewise asinh -- polynomials only, for hardware with no transcendental
@@ -116,7 +124,8 @@ class Gated(_Stack):
         return {"f": lambda: f_ab(t, a, b), "g": lambda: g_AB(t, A, B),
                 "F": lambda: f_hard(t, a, b), "G": lambda: g_alg(t, A, B),
                 "p": lambda: g_pw(t, A, B),  "P": lambda: g_ABpw(t, A, B),
-                "T": lambda: f_tan(t, a, b),
+                "T": lambda: f_tan(t, a, b), "t": lambda: f_fix(t, a, b),
+                "C": lambda: f_clp(t, a, b),
                 "s": lambda: F.silu(t),     "i": lambda: t,
                 "r": lambda: F.relu(t),     "e": lambda: F.gelu(t)}[which]()
 
@@ -175,6 +184,11 @@ MODELS = {
     "Tg": lambda S, **k: Gated(S, order="Tg", **k),
     "sG": lambda S, **k: Gated(S, order="sG", **k),      # silu gate, both-sides value
     "Ti": lambda S, **k: Gated(S, order="Ti", **k),      # bounded gate, linear value (GTU-like)
+    "tG": lambda S, **k: Gated(S, order="tG", **k),      # fixed tanh gate -- control for T
+    "tg": lambda S, **k: Gated(S, order="tg", **k),
+    "ti": lambda S, **k: Gated(S, order="ti", **k),
+    "CG": lambda S, **k: Gated(S, order="CG", **k),      # clamp gate -- no transcendental
+    "Ci": lambda S, **k: Gated(S, order="Ci", **k),
     "gf": lambda S, **k: Gated(S, order="gf", **k),
     "ff": lambda S, **k: Gated(S, order="ff", **k),
     "gg": lambda S, **k: Gated(S, order="gg", **k),
