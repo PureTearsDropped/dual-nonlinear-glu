@@ -47,8 +47,11 @@ Depth 32, 8 seeds, $\tanh$-product teacher, identical parameter counts (136,392)
 |identity|identity — bilinear|0.08786 ± 0.00101|+458% (171 σ)|
 
 On this teacher the effect is **making the value branch nonlinear**, worth
-3.6–4.5×; *which* nonlinearity is worth nothing — silu⊙silu and $f\odot g$ are
-within 0.2 σ of each other. Contributions separate cleanly: swapping the value
+3.6–4.5×. Among the two rows above, *which* nonlinearity is worth nothing —
+silu⊙silu and $f\odot g$ are within 0.2 σ of each other. That held until
+$F\odot G$ was measured: it reaches **0.00886 ± 0.00019** on this same teacher,
+1.77× below both of them (22 σ). Which nonlinearity does matter; the pair that
+shows it is not $f\odot g$. Section 4. Contributions separate cleanly: swapping the value
 identity for $g$ takes 0.07117 → 0.01969 (3.6×), swapping the gate silu for $f$
 takes 0.07117 → 0.04925 (1.4×). **The value branch carries about twice the gate's
 effect.**
@@ -81,10 +84,16 @@ row above.
 |---|---|---|
 |value branch nonlinear at all|**4.5×**|**nothing**|
 |$f$ and $g$ specifically|**nothing** (ties silu⊙silu)|**33%**|
+|$\operatorname{asinh}$ on *both* sides of the value branch|**1.65–2.09×**|**2.01–2.02×**|
 
-**The two teachers give opposite accounts.** Neither "dual nonlinearity is the
-point" nor "this pair is the point" survives both. What survives is that
-$f\odot g$ is first on both and bilinear is last on both.
+**The two teachers give opposite accounts about the first two rows.** Neither
+"dual nonlinearity is the point" nor "this pair is the point" survives both.
+
+The third row does survive both, at the same size and the same sign, and it was
+added after sections 2 and 3 were written. It is the one claim here that two
+disagreeing teachers agree on: **compressing the value branch's positive half,
+not just its negative half.** Section 4 has the measurements; $F\odot G$, not
+$f\odot g$, is first on both teachers, and bilinear is last on both.
 
 Earlier measurements at a smaller scope, kept for the record:
 
@@ -107,10 +116,28 @@ one at a time, depth 16, 8 seeds, iterated-map teacher:
 |$F\odot g$|$\max(ax,-b)$|$g$ exact|0.05071 ± 0.00103|+102%|
 |$f\odot g$|$f$ exact|$g$ exact|0.05236 ± 0.00117|+109%|
 
-**The value branch's positive half is the whole effect.** Compressing it as well
-as the negative half — $\operatorname{asinh}$ on both sides instead of a linear
-positive side — is worth 2.1×. Replacing the gate's $\tanh$ with a plain
-$\max(ax,-b)$ is worth 4%, in the same direction.
+The same four on the $\tanh$-product teacher, depth 32, 8 seeds, with
+silu⊙silu and $f\odot g$ from section 2 rerun alongside them and reproducing
+their published values exactly:
+
+| | gate | value | loss | vs best |
+|---|---|---|---|---|
+|$F\odot G$|$\max(ax,-b)$|$\operatorname{asinh}$ both sides|**0.00886 ± 0.00019**|—|
+|$f\odot G$|$f$ exact|$\operatorname{asinh}$ both sides|0.00954 ± 0.00019|+7.7% (7.2 σ)|
+|silu⊙silu|silu|silu|0.01566 ± 0.00086|+77% (22 σ)|
+|$f\odot g$|$f$ exact|$g$ exact|0.01575 ± 0.00064|+78% (29 σ)|
+|$F\odot g$|$\max(ax,-b)$|$g$ exact|0.01848 ± 0.00048|+109% (53 σ)|
+
+**The value branch's positive half is the whole effect, on both teachers.**
+Compressing it as well as the negative half — $\operatorname{asinh}$ on both
+sides instead of a linear positive side — is worth 2.0–2.1× on the iterated map
+and 1.65–2.09× on the $\tanh$ product. The sign never changes.
+
+**The gate is not robust, and it interacts with the value branch.** Replacing
+the gate's $\tanh$ with $\max(ax,-b)$ is worth +4% on the iterated map in both
+columns, but on the $\tanh$ product it is **−17% (worse, 9.6 σ)** when the value
+branch is the one-sided $g$ and **+7% (better, 7.2 σ)** when it is the
+both-sides $G$. The two changes are not additive.
 
 This was first read the wrong way round. $F\odot G$ beat $f\odot g$ by 2.1× and
 the gain was attributed to $\max(ax,-b)$, because both changes were made at

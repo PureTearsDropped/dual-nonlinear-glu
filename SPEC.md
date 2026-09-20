@@ -38,6 +38,25 @@ g_AB = lambda y, A, B: torch.where(y >= 0, y/A, (B/A)*torch.asinh(y/B))
 
 $a,b,A,B$ are learned per channel, kept positive by softplus.
 
+**The pair above is not the best-measured form.** Applying $\mathrm{asinh}$ to
+*both* halves of the value branch,
+
+$$G_{A,B}(y)=\frac{B}{A}\,\mathrm{asinh}\!\big(\tfrac{y}{B}\big)\quad\text{for all }y,$$
+
+is worth about 2× on both teachers (RESULTS 4) and is branch-free. It is a
+different function, not an approximation of $g_{A,B}$: the positive half is
+compressed too, so a network trained with one must not be evaluated with the
+other. `dnglu.py` defaults to it (`mode="sym"`).
+
+What it costs is the conjugacy: $g_{A,B}$ was built so that $g\circ f$ deviates
+from the identity in a controlled way, and $G_{A,B}$ is not that. What it does
+*not* cost is section 3 or the smoothness. The potential stays elementary,
+
+$$\int_0^y G_{A,B} = \frac{B}{A}\Big(y\,\mathrm{asinh}\tfrac{y}{B} - \sqrt{B^2+y^2} + B\Big),\quad\text{[verified]}$$
+
+and $G_{A,B}$ is analytic everywhere, where $g_{A,B}$ is only $C^2$. The
+initialisation and the diagnostics below apply unchanged.
+
 **Do not rewrite with ReLU.** `a*relu(x) - b*tanh(a*relu(-x)/b)` has identical
 values but **the gradient is wrong at exactly $x=0$** — PyTorch's `relu'(0)=0`
 makes it 0 where the correct value is $a$. `[verified]` The `where` form is also

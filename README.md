@@ -29,10 +29,13 @@ g_{A,B}(y)=\begin{cases}y/A & y\ge0\\ (B/A)\,\mathrm{asinh}(y/B) & y<0\end{cases
 
 | gate | value | loss | |
 |---|---|---|---|
-|silu|silu|**0.01566 ± 0.00086**|−0.2 σ vs $f\odot g$|
-|$f$|$g$|**0.01575 ± 0.00064**|—|
+|$\max(ax,-b)$|$\mathrm{asinh}$ **both sides**|**0.00886 ± 0.00019**|−43% (22 σ) vs silu⊙silu|
+|$f$|$\mathrm{asinh}$ **both sides**|**0.00954 ± 0.00019**|−39% vs silu⊙silu|
+|silu|silu|0.01566 ± 0.00086|−0.2 σ vs $f\odot g$|
+|$f$|$g$|0.01575 ± 0.00064|—|
 |$g$|$g$|0.01697 ± 0.00056|+7.7% (4.0 σ)|
 |$f$|$f$|0.01717 ± 0.00102|+9.0% (3.3 σ)|
+|$\max(ax,-b)$|$g$|0.01848 ± 0.00048|+17% (9.6 σ)|
 |silu|$g$|0.01969 ± 0.00084|+25% (10.5 σ)|
 |$f$|identity|0.04925 ± 0.00072|+213%|
 |silu|identity — **SwiGLU**|0.07117 ± 0.00031|+352%|
@@ -42,7 +45,10 @@ g_{A,B}(y)=\begin{cases}y/A & y\ge0\\ (B/A)\,\mathrm{asinh}(y/B) & y<0\end{cases
 
 | gate | value | loss | |
 |---|---|---|---|
-|$f$|$g$|**0.05236 ± 0.00117**|—|
+|$\max(ax,-b)$|$\mathrm{asinh}$ **both sides**|**0.02506 ± 0.00055**|−52% vs $f\odot g$|
+|$f$|$\mathrm{asinh}$ **both sides**|**0.02607 ± 0.00074**|−50% vs $f\odot g$|
+|$\max(ax,-b)$|$g$|0.05071 ± 0.00103|−3.2%|
+|$f$|$g$|0.05236 ± 0.00117|—|
 |silu|identity — **SwiGLU**|0.06952 ± 0.00112|+33% (30 σ)|
 |silu|silu|0.07132 ± 0.00145|+36% (29 σ)|
 |identity|identity — **bilinear**|0.09263 ± 0.00034|+77%|
@@ -55,10 +61,20 @@ g_{A,B}(y)=\begin{cases}y/A & y\ge0\\ (B/A)\,\mathrm{asinh}(y/B) & y<0\end{cases
 |---|---|---|
 |making the value branch nonlinear at all|**4.5×**|**nothing** (silu⊙silu ≈ SwiGLU)|
 |using $f$ and $g$ specifically|**nothing** (ties silu⊙silu)|**33%**|
+|$\mathrm{asinh}$ on *both* sides of the value branch|**1.65–2.09×**|**2.01–2.02×**|
 
-So neither "dual nonlinearity is the point" nor "this pair is the point" survives
-both tasks. What survives both is narrower: **$f\odot g$ is first in both**, and
-bilinear (no nonlinearity anywhere) is last in both — the product alone is not
+Neither "dual nonlinearity is the point" nor "this pair is the point" survives
+both tasks. **The third row does.** It is the same size and the same sign on two
+teachers that disagree about everything else: what pays is compressing the value
+branch's *positive* half as well as its negative half, which the published
+$g_{A,B}$ leaves linear.
+
+The gate, by contrast, is not robust. Replacing its $\tanh$ shoulder with a plain
+$\max(ax,-b)$ is worth +4% on the iterated map, but on the $\tanh$ product it is
+−17% with the one-sided $g$ and +7% with the both-sides form — the sign flips
+depending on the other branch, so the two changes are not additive.
+
+Bilinear (no nonlinearity anywhere) is last in both — the product alone is not
 enough here, unlike in Dauphin et al., where bilinear beat a linear network by 40
 perplexity points and lost to GLU by 20.
 
@@ -68,7 +84,8 @@ reproduce at depth 32 here. **Why it does not is unresolved.** A natural guess i
 that $f$ and $g$ have derivative exactly $a$ and $1/A$ on their entire positive
 half, so nothing downscales there, unlike $\tanh'\cdot\sigma'$ in GTU. But
 silu⊙silu has no such property and ties $f\odot g$ on one of the two teachers, so
-that explanation is not supported either.
+that explanation is not supported either — and the best form measured here,
+$\mathrm{asinh}$ on both sides, has no linear half at all.
 
 ## Prior work
 
