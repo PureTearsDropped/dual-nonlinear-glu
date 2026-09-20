@@ -37,24 +37,27 @@ Depth 32, 8 seeds, $\tanh$-product teacher, matched parameters (~136k):
 
 | gate | value | loss | std |
 |---|---|---|---|
-|$f$|$g$|**0.01587**|0.00059|
-|$f$|$f$|0.01694|0.00062|
-|$g$|$g$|0.01737|0.00088|
-|silu|$g$|0.01944|0.00089|
-|$f$|**identity**|0.04829|0.00066|
-|silu|**identity** (SwiGLU)|0.07095|0.00086|
+|$f$|$g$|**0.01575**|0.00064|
+|$g$|$g$|0.01697 (+7.7%, 4.0 σ)|0.00056|
+|$f$|$f$|0.01717 (+9.0%, 3.3 σ)|0.00102|
+|silu|$g$|0.01969 (+25.0%, 10.5 σ)|0.00084|
+|$f$|**identity**|0.04925 (+213%, 98 σ)|0.00072|
+|silu|**identity** (SwiGLU)|0.07117 (+352%, 220 σ)|0.00031|
 
-**Making the value branch nonlinear is worth 3.7–4.5×. Which nonlinearity is
-worth 6–9%.** Both are real; the sizes differ by an order of magnitude.
+All six have exactly 136,392 parameters. $f\odot f$ and $g\odot g$ are within
+each other's error; only their common gap to $f\odot g$ is resolved.
+
+**Making the value branch nonlinear is worth 3.6–4.5×. Which nonlinearity is
+worth 8–9%.** Both are real; the sizes differ by an order of magnitude.
 
 | change | effect |
 |---|---|
-|value: identity → nonlinear|**+267% to +347%**|
-|among nonlinear pairs: choose $f\odot g$|**+6.7% (3.5 σ) to +9.4% (4.0 σ)**|
+|value: identity → nonlinear|**+213% to +352%** (98–220 σ)|
+|among nonlinear pairs: choose $f\odot g$|**+7.7% to +9.0%** (3.3–4.0 σ)|
 
 Contributions separate cleanly. Replacing the value identity with $g$ takes
-0.07095 → 0.01944 (3.7×); replacing the gate silu with $f$ takes 0.07095 →
-0.04829 (1.5×). **The value branch carries about twice the effect of the gate.**
+0.07117 → 0.01969 (3.6×); replacing the gate silu with $f$ takes 0.07117 →
+0.04925 (1.4×). **The value branch carries about twice the effect of the gate.**
 
 ## 3. The ranking survives a change of teacher
 
