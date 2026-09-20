@@ -63,4 +63,7 @@ keywords:
 references:
   - type: software
     title: "relu-tanh-asinh: a conjugate f/g residual layer"
+    authors:
+      - alias: PureTearsDropped
     doi: 10.5281/zenodo.22847920
+    repository-code: "https://github.com/PureTearsDropped/relu-tanh-asinh"
