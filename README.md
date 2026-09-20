@@ -1,6 +1,6 @@
 # dual-nonlinear-glu
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22851806.svg)](https://doi.org/10.5281/zenodo.22851806)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22851805.svg)](https://doi.org/10.5281/zenodo.22851805)
 [![License: 0BSD](https://img.shields.io/badge/License-0BSD-blue.svg)](LICENSE)
 
 Revisiting a design choice the field made in 2017 and has kept since: **the value
@@ -267,7 +267,7 @@ pair and the residual-initialisation result in more detail.
   author  = {PureTearsDropped},
   title   = {dual-nonlinear-glu: revisiting the linear value branch of gated layers},
   year    = {2026},
-  doi     = {10.5281/zenodo.22851806},
+  doi     = {10.5281/zenodo.22851805},
   url     = {https://github.com/PureTearsDropped/dual-nonlinear-glu}
 }
 ```

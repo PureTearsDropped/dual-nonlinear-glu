@@ -8,7 +8,7 @@ authors:
   - alias: PureTearsDropped
 repository-code: "https://github.com/PureTearsDropped/dual-nonlinear-glu"
 license: 0BSD
-doi: 10.5281/zenodo.22851806
+doi: 10.5281/zenodo.22851805
 abstract: >-
   Gated layers in transformers keep their value branch linear: SwiGLU is
   silu(W_g h) * (W_u h). Making both branches nonlinear is not a new design --
@@ -63,4 +63,4 @@ keywords:
 references:
   - type: software
     title: "relu-tanh-asinh: a conjugate f/g residual layer"
-    doi: 10.5281/zenodo.22847921
+    doi: 10.5281/zenodo.22847920
