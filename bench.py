@@ -41,6 +41,9 @@ g_AB = lambda y, A, B: torch.where(y >= 0, y / A, (B / A) * torch.asinh(y / B))
 #   g: apply asinh on both sides, dropping the branch (this changes the
 #      function -- the positive side is compressed too)
 f_hard = lambda x, a, b: torch.maximum(a * x, -b)
+# Symmetric tanh gate: f with its linear positive half removed as well, so the
+# gate is bounded above too and the product cannot amplify the value branch.
+f_tan  = lambda x, a, b: b * torch.tanh(a * x / b)
 g_alg  = lambda y, A, B: (B / A) * torch.asinh(y / B)
 
 # Piecewise asinh -- polynomials only, for hardware with no transcendental
@@ -113,6 +116,7 @@ class Gated(_Stack):
         return {"f": lambda: f_ab(t, a, b), "g": lambda: g_AB(t, A, B),
                 "F": lambda: f_hard(t, a, b), "G": lambda: g_alg(t, A, B),
                 "p": lambda: g_pw(t, A, B),  "P": lambda: g_ABpw(t, A, B),
+                "T": lambda: f_tan(t, a, b),
                 "s": lambda: F.silu(t),     "i": lambda: t,
                 "r": lambda: F.relu(t),     "e": lambda: F.gelu(t)}[which]()
 
@@ -167,6 +171,10 @@ MODELS = {
     "FG": lambda S, **k: Gated(S, order="FG", **k),      # cheap: max() and one rsqrt
     "Fg": lambda S, **k: Gated(S, order="Fg", **k),      # cheap gate only
     "fG": lambda S, **k: Gated(S, order="fG", **k),      # cheap value only
+    "TG": lambda S, **k: Gated(S, order="TG", **k),      # no linear half anywhere
+    "Tg": lambda S, **k: Gated(S, order="Tg", **k),
+    "sG": lambda S, **k: Gated(S, order="sG", **k),      # silu gate, both-sides value
+    "Ti": lambda S, **k: Gated(S, order="Ti", **k),      # bounded gate, linear value (GTU-like)
     "gf": lambda S, **k: Gated(S, order="gf", **k),
     "ff": lambda S, **k: Gated(S, order="ff", **k),
     "gg": lambda S, **k: Gated(S, order="gg", **k),

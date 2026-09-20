@@ -21,6 +21,33 @@ $$f_{a,b}(x)=\begin{cases}a x & x\ge0\\ b\tanh(ax/b) & x<0\end{cases}
 \qquad
 g_{A,B}(y)=\begin{cases}y/A & y\ge0\\ (B/A)\,\mathrm{asinh}(y/B) & y<0\end{cases}$$
 
+Both of these are **linear above zero**, and measuring what that linear half
+costs turned out to matter more than the choice of pair. Removing it from the
+gate — a plain $b\tanh(ax/b)$ on both sides, which is the Gated Tanh Unit's own
+gate — is worth 1.5–5.9× on top, on both teachers. The tables below carry every
+combination; the legend for the letters is directly under them.
+
+## The pieces
+
+Every model below is the same block with two slots filled differently:
+
+```
+h <- h + W_d ( gate(W_g h)  *  value(W_u h) )
+
+gate                                      value
+  T   b tanh(a x / b)   bounded both        G   (B/A) asinh(y / B)   asinh both sides
+  F   max(a x, -b)      linear above        g   y/A        (y>=0)    linear above
+  f   a x       (x>=0)  linear above            (B/A)asinh(y/B) (y<0)
+      b tanh(a x/b) (x<0)                   s   silu(y)
+  s   silu(x)           what SwiGLU uses    i   y                    what SwiGLU uses
+  i   x
+```
+
+`a, b, A, B` are learned per channel. **`F`, `f` and `g` are linear above zero;
+`T` and `G` are not** — that distinction turns out to be the whole story.
+Models are named gate-then-value: `fg` is the pair specified below, `si` is
+SwiGLU, `ii` is bilinear.
+
 ## Results
 
 8 seeds, all models at identical parameter counts. Normalised MSE, lower is better.
@@ -29,29 +56,35 @@ g_{A,B}(y)=\begin{cases}y/A & y\ge0\\ (B/A)\,\mathrm{asinh}(y/B) & y<0\end{cases
 
 | gate | value | loss | |
 |---|---|---|---|
-|$\max(ax,-b)$|$\mathrm{asinh}$ **both sides**|**0.00886 ± 0.00019**|−43% (22 σ) vs silu⊙silu|
-|$f$|$\mathrm{asinh}$ **both sides**|**0.00954 ± 0.00019**|−39% vs silu⊙silu|
-|silu|silu|0.01566 ± 0.00086|−0.2 σ vs $f\odot g$|
-|$f$|$g$|0.01575 ± 0.00064|—|
-|$g$|$g$|0.01697 ± 0.00056|+7.7% (4.0 σ)|
-|$f$|$f$|0.01717 ± 0.00102|+9.0% (3.3 σ)|
-|$\max(ax,-b)$|$g$|0.01848 ± 0.00048|+17% (9.6 σ)|
-|silu|$g$|0.01969 ± 0.00084|+25% (10.5 σ)|
-|$f$|identity|0.04925 ± 0.00072|+213%|
-|silu|identity — **SwiGLU**|0.07117 ± 0.00031|+352%|
-|identity|identity — **bilinear**|0.08786 ± 0.00101|+458%|
+|`T`|`G`|**0.00162 ± 0.00011**|9.7× below silu⊙silu|
+|`T`|`g`|0.00483 ± 0.00020||
+|`T`|`i`|0.00511 ± 0.00010|bounded gate alone, value left linear|
+|`F`|`G`|0.00886 ± 0.00019||
+|`f`|`G`|0.00954 ± 0.00019||
+|`s`|`s`|0.01566 ± 0.00086|−0.2 σ vs `fg`|
+|`f`|`g`|0.01575 ± 0.00064|the pair specified below|
+|`g`|`g`|0.01697 ± 0.00056||
+|`f`|`f`|0.01717 ± 0.00102||
+|`F`|`g`|0.01848 ± 0.00048||
+|`s`|`g`|0.01969 ± 0.00084||
+|`f`|`i`|0.04925 ± 0.00072||
+|`s`|`i` — **SwiGLU**|0.07117 ± 0.00031||
+|`i`|`i` — **bilinear**|0.08786 ± 0.00101||
 
 **Teacher: an iterated map, no product at all, depth 16**
 
 | gate | value | loss | |
 |---|---|---|---|
-|$\max(ax,-b)$|$\mathrm{asinh}$ **both sides**|**0.02506 ± 0.00055**|−52% vs $f\odot g$|
-|$f$|$\mathrm{asinh}$ **both sides**|**0.02607 ± 0.00074**|−50% vs $f\odot g$|
-|$\max(ax,-b)$|$g$|0.05071 ± 0.00103|−3.2%|
-|$f$|$g$|0.05236 ± 0.00117|—|
-|silu|identity — **SwiGLU**|0.06952 ± 0.00112|+33% (30 σ)|
-|silu|silu|0.07132 ± 0.00145|+36% (29 σ)|
-|identity|identity — **bilinear**|0.09263 ± 0.00034|+77%|
+|`T`|`g`|**0.01676 ± 0.00073**|3.1× below `fg`|
+|`T`|`G`|0.01747 ± 0.00074|1.9 σ from the row above — a tie|
+|`F`|`G`|0.02506 ± 0.00055||
+|`f`|`G`|0.02607 ± 0.00074||
+|`T`|`i`|0.02643 ± 0.00086|0.9 σ from `fG` — fixing either branch alone lands here|
+|`F`|`g`|0.05071 ± 0.00103||
+|`f`|`g`|0.05236 ± 0.00117|the pair specified below|
+|`s`|`i` — **SwiGLU**|0.06952 ± 0.00112||
+|`s`|`s`|0.07132 ± 0.00145||
+|`i`|`i` — **bilinear**|0.09263 ± 0.00034||
 
 ## What the two tables together say
 
@@ -61,18 +94,23 @@ g_{A,B}(y)=\begin{cases}y/A & y\ge0\\ (B/A)\,\mathrm{asinh}(y/B) & y<0\end{cases
 |---|---|---|
 |making the value branch nonlinear at all|**4.5×**|**nothing** (silu⊙silu ≈ SwiGLU)|
 |using $f$ and $g$ specifically|**nothing** (ties silu⊙silu)|**33%**|
-|$\mathrm{asinh}$ on *both* sides of the value branch|**1.65–2.09×**|**2.01–2.02×**|
+|removing the **value** branch's linear half (`g`→`G`)|**1.65–2.98×**|0.96–2.02×|
+|removing the **gate's** linear half (`f`→`T`)|**3.26–5.89×**|**1.49–3.12×**|
 
-Neither "dual nonlinearity is the point" nor "this pair is the point" survives
-both tasks. **The third row does.** It is the same size and the same sign on two
-teachers that disagree about everything else: what pays is compressing the value
-branch's *positive* half as well as its negative half, which the published
-$g_{A,B}$ leaves linear.
+Neither of the first two survives both tasks. **The last row does**, at the
+largest size, with no cell that fails: across two teachers that disagree about
+everything else, what costs is the gate being linear above zero. The row above
+it survives almost as well but has one cell (gate `T`, iterated map) where it
+buys nothing.
 
-The gate, by contrast, is not robust. Replacing its $\tanh$ shoulder with a plain
-$\max(ax,-b)$ is worth +4% on the iterated map, but on the $\tanh$ product it is
-−17% with the one-sided $g$ and +7% with the both-sides form — the sign flips
-depending on the other branch, so the two changes are not additive.
+This reverses an earlier reading of the same data. Comparing `f` against `F`
+looked like "the gate is worth 4%" — but `f` and `F` differ only *below* zero,
+so that comparison never touched the linear half. `T` does, and the gate turns
+out to be the larger of the two effects.
+
+**The two changes are redundant, not additive.** On the iterated map, fixing the
+gate alone (`Ti`, 0.02643) and fixing the value alone (`fG`, 0.02607) land 0.9 σ
+apart; doing both (`TG`, 0.01747) is a further 1.5×, not 3 × 1.5.
 
 Bilinear (no nonlinearity anywhere) is last in both — the product alone is not
 enough here, unlike in Dauphin et al., where bilinear beat a linear network by 40
@@ -80,12 +118,19 @@ perplexity points and lost to GLU by 20.
 
 The 2017 gradient argument against dual nonlinearity — that both branches
 contribute a downscaling factor and the product vanishes with depth — does not
-reproduce at depth 32 here. **Why it does not is unresolved.** A natural guess is
-that $f$ and $g$ have derivative exactly $a$ and $1/A$ on their entire positive
-half, so nothing downscales there, unlike $\tanh'\cdot\sigma'$ in GTU. But
-silu⊙silu has no such property and ties $f\odot g$ on one of the two teachers, so
-that explanation is not supported either — and the best form measured here,
-$\mathrm{asinh}$ on both sides, has no linear half at all.
+reproduce at depth 32 here. **Why it does not is unresolved.** A natural guess
+was that $f$ and $g$ have derivative exactly $a$ and $1/A$ on their whole
+positive half, so nothing downscales there, unlike $\tanh'\cdot\sigma'$ in GTU.
+The measurements above kill that guess: the best forms are `T` and `G`, which
+have *no* linear half and therefore do downscale on both sides.
+
+**Two things these tables do not establish.** `T` learns a slope and a
+saturation level; `silu` learns nothing. Parameter counts are matched, but
+whether `T` wins by being bounded or by being scalable is not separated here — a
+fixed `tanh` would separate it and has not been run. And the margin over SwiGLU
+is far larger on the $\tanh$-product teacher (13.9× for `Ti`) than on the
+iterated map (2.6×); SwiGLU beats bounded gates on real language, so a 14× the
+other way on a synthetic teacher says more about the teacher than about SwiGLU.
 
 ## Prior work
 
@@ -132,8 +177,16 @@ and no stability guarantee follows.
 - the 2017 gradient argument is contradicted here but not explained
 - $\Phi$ has been verified as an identity and logged; **never used as a
   regulariser or objective**
-- $a,b,A,B$ barely move during training — the initialisation does the work, and
-  it is not understood why the learning does not use those degrees of freedom
+- $a,b,A,B$ barely move under the `f`/`F` gates — $a$ ends near 0.82 from an
+  initial 1.0 — but under the bounded `T` gate $a$ moves to about 0.27, so
+  "the initialisation does the work" is a statement about the unbounded gates,
+  not a general one
+- whether `T` wins by being bounded or by learning its scale is **not
+  separated**; `silu` has no learned parameters to compare against, and a fixed
+  $\tanh$ ($a=b=1$) has not been run
+- the margin over SwiGLU is 13.9× on the $\tanh$-product teacher and 2.6× on the
+  iterated map; SwiGLU beats bounded gates on real language, so the larger
+  number is most likely a property of that teacher
 - curvature-aware ternary rounding was tried and **failed** (RESULTS 7)
 - no comparison against LayerNorm'd blocks, which is how real transformers avoid
   the instability that forced the $1/\sqrt{L}$ init here

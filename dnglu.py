@@ -35,7 +35,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 __all__ = ["f_ab", "g_AB", "F_ab", "G_AB", "f_fast", "g_fast", "f_sym", "g_sym",
-           "asinh_pw", "g_pw", "DualGLU", "DualGLUNet"]
+           "f_tan", "asinh_pw", "g_pw", "DualGLU", "DualGLUNet"]
 
 _pos = lambda r: F.softplus(r) + 1e-4
 _inv = lambda v: math.log(math.expm1(max(v - 1e-4, 1e-6)))
@@ -110,6 +110,20 @@ def g_fast(y, A, B):
 
 
 f_sym = f_fast                       # the same max; f has no positive-side curve
+
+
+def f_tan(x, a, b):
+    """The gate with its linear positive half removed: tanh on both sides, so
+    the gate is bounded above as well as below and the product cannot amplify
+    the value branch.
+
+    This is the Gated Tanh Unit's gate with a learned slope and saturation
+    level, and it is the best-measured gate here -- 1.5-5.9x below f_ab on two
+    teachers that disagree about much else (RESULTS 4). Whether it wins by being
+    bounded or by learning a and b is not separated; silu has no parameters to
+    compare against.
+    """
+    return b * torch.tanh(a * x / b)
 
 
 def g_sym(y, A, B):
@@ -207,14 +221,17 @@ class DualGLU(nn.Module):
              matters a great deal and is not optional past depth ~16.
     """
 
-    def __init__(self, d_model, d_hidden=None, depth=1, b0=0.1, mode="sym"):
-        """mode: "sym"   branch-free, asinh both sides -- best measured, train with it
-                 "exact" the C^2 pair, positive side linear
+    def __init__(self, d_model, d_hidden=None, depth=1, b0=0.1, mode="gtu"):
+        """mode: "gtu"   tanh gate + asinh value, neither with a linear positive
+                         half -- best measured (RESULTS 4), train with it
+                 "sym"   max() gate + asinh value, branch-free
+                 "exact" the C^2 pair, positive side linear on both branches
                  "fast"  approximations of "exact", for inference on a model
                          trained with mode="exact" (see set_mode)
                  "pw"    "sym" with asinh by polynomials only -- what hardware
                          without a transcendental unit would compute. Slower
                          than "sym" on a GPU; see asinh_pw.
+                 "gtu_pw" the same substitution under "gtu".
         """
         super().__init__()
         self.mode = mode
@@ -243,7 +260,8 @@ class DualGLU(nn.Module):
 
     def _pair(self):
         return {"exact": (f_ab, g_AB), "fast": (f_fast, g_fast),
-                "sym": (f_sym, g_sym), "pw": (f_sym, g_pw)}[self.mode]
+                "sym": (f_sym, g_sym), "pw": (f_sym, g_pw),
+                "gtu": (f_tan, g_sym), "gtu_pw": (f_tan, g_pw)}[self.mode]
 
     def potential(self, h):
         """Phi = F(u) G(v). Its mixed second derivative is the block's output.
@@ -263,7 +281,7 @@ class DualGLU(nn.Module):
 
 class DualGLUNet(nn.Module):
     def __init__(self, d_in, d_out, d_model=64, depth=4, d_hidden=None, b0=0.1,
-                 mode="sym"):
+                 mode="gtu"):
         super().__init__()
         self.inp = nn.Linear(d_in, d_model)
         self.blocks = nn.ModuleList(

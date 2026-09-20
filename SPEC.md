@@ -38,17 +38,25 @@ g_AB = lambda y, A, B: torch.where(y >= 0, y/A, (B/A)*torch.asinh(y/B))
 
 $a,b,A,B$ are learned per channel, kept positive by softplus.
 
-**The pair above is not the best-measured form.** Applying $\mathrm{asinh}$ to
-*both* halves of the value branch,
+**The pair above is not the best-measured form.** Both $f_{a,b}$ and $g_{A,B}$
+are linear above zero, and on this benchmark that linear half is what costs.
+Removing it from either branch gives
 
-$$G_{A,B}(y)=\frac{B}{A}\,\mathrm{asinh}\!\big(\tfrac{y}{B}\big)\quad\text{for all }y,$$
+$$T_{a,b}(x)=b\,\tanh\!\big(\tfrac{a x}{b}\big),\qquad
+  G_{A,B}(y)=\frac{B}{A}\,\mathrm{asinh}\!\big(\tfrac{y}{B}\big),$$
 
-is worth about 2× on both teachers (RESULTS 4) and is branch-free. It is a
-different function, not an approximation of $g_{A,B}$: the positive half is
-compressed too, so a network trained with one must not be evaluated with the
-other. `dnglu.py` defaults to it (`mode="sym"`).
+each applied on **both** sides. Both are branch-free. Removing it from the gate
+is worth 1.5–5.9× and from the value branch 1.0–3.0×, on two teachers that
+disagree about much else (RESULTS 4). The two are largely redundant: fixing
+either branch alone lands in the same place.
 
-What it costs is the conjugacy: $g_{A,B}$ was built so that $g\circ f$ deviates
+These are different functions, not approximations of $f_{a,b}$ and $g_{A,B}$ —
+the positive halves are compressed too — so a network trained with one pair must
+not be evaluated with the other. `dnglu.py` defaults to $T_{a,b}\odot G_{A,B}$
+(`mode="gtu"`); $\max(ax,-b)\odot G_{A,B}$ is `mode="sym"` and the pair
+specified above is `mode="exact"`.
+
+What this costs is the conjugacy: $g_{A,B}$ was built so that $g\circ f$ deviates
 from the identity in a controlled way, and $G_{A,B}$ is not that. What it does
 *not* cost is section 3 or the smoothness. The potential stays elementary,
 

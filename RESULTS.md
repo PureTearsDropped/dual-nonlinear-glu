@@ -8,6 +8,38 @@ Common setup: residual width 64, gate/value width 64/3, 5000 steps, Adam 3e-3
 with cosine decay, batch 512, fresh data each step (no overfitting, no ceiling),
 $W_d$ initialised at $L^{-1/2}$, per-seed gradient clipping.
 
+## Notation
+
+Every model here is a gated residual block,
+
+```
+h <- h + W_d ( gate(W_g h)  *  value(W_u h) )
+```
+
+and they differ only in which two functions fill those slots. `a, b, A, B` are
+learned per channel and kept positive by softplus.
+
+| gate | | |
+|---|---|---|
+|`T`|`b tanh(a x / b)`|tanh on both sides — bounded above **and** below|
+|`F`|`max(a x, -b)`|linear above, clamped to `-b` below|
+|`f`|`a x` for `x>=0`, `b tanh(a x / b)` for `x<0`|linear above, tanh below — the gate specified in SPEC.md|
+|`s`|`silu(x)`|what SwiGLU uses|
+|`i`|`x`|identity|
+
+| value | | |
+|---|---|---|
+|`G`|`(B/A) asinh(y / B)`|asinh on both sides|
+|`g`|`y/A` for `y>=0`, `(B/A) asinh(y/B)` for `y<0`|linear above, asinh below — the value specified in SPEC.md|
+|`s`|`silu(y)`| |
+|`i`|`y`|identity — what SwiGLU uses|
+
+Three of these have a **linear positive half**: `F`, `f` and `g`. `T` and `G` do
+not. Section 4 is about what that half costs.
+
+Models are named gate-then-value, so `fg` is the pair SPEC.md specifies, `si` is
+SwiGLU and `ii` is bilinear.
+
 ## 1. Teachers
 
 A gated student on a product teacher can win by *resembling the teacher*, so
@@ -48,10 +80,12 @@ Depth 32, 8 seeds, $\tanh$-product teacher, identical parameter counts (136,392)
 
 On this teacher the effect is **making the value branch nonlinear**, worth
 3.6–4.5×. Among the two rows above, *which* nonlinearity is worth nothing —
-silu⊙silu and $f\odot g$ are within 0.2 σ of each other. That held until
-$F\odot G$ was measured: it reaches **0.00886 ± 0.00019** on this same teacher,
-1.77× below both of them (22 σ). Which nonlinearity does matter; the pair that
-shows it is not $f\odot g$. Section 4. Contributions separate cleanly: swapping the value
+silu⊙silu and $f\odot g$ are within 0.2 σ of each other.
+
+That conclusion came from a table in which **every gate is linear above zero**.
+Section 4 adds gates that are not, and the picture changes: `TG` reaches
+**0.00162 ± 0.00011** on this same teacher, 9.7× below both rows above. Which
+nonlinearity does matter, and the pair that shows it is not $f\odot g$. Contributions separate cleanly: swapping the value
 identity for $g$ takes 0.07117 → 0.01969 (3.6×), swapping the gate silu for $f$
 takes 0.07117 → 0.04925 (1.4×). **The value branch carries about twice the gate's
 effect.**
@@ -77,23 +111,25 @@ resembling it. On an iterated map with no product at all, depth 16, 8 seeds:
 nothing here; only $f\odot g$ does.
 
 $f\odot g$ is not the best configuration on this teacher, though — section 4
-splits it into its two ingredients and reaches 0.02506, another 2.1× below the
+changes one ingredient at a time and reaches 0.01676, another 3.1× below the
 row above.
 
 | | $\tanh$ product | iterated map |
 |---|---|---|
 |value branch nonlinear at all|**4.5×**|**nothing**|
 |$f$ and $g$ specifically|**nothing** (ties silu⊙silu)|**33%**|
-|$\operatorname{asinh}$ on *both* sides of the value branch|**1.65–2.09×**|**2.01–2.02×**|
+|removing the value branch's linear half (`g`→`G`)|**1.65–2.98×**|0.96–2.02×|
+|removing the **gate's** linear half (`f`→`T`)|**3.26–5.89×**|**1.49–3.12×**|
 
 **The two teachers give opposite accounts about the first two rows.** Neither
 "dual nonlinearity is the point" nor "this pair is the point" survives both.
 
-The third row does survive both, at the same size and the same sign, and it was
-added after sections 2 and 3 were written. It is the one claim here that two
-disagreeing teachers agree on: **compressing the value branch's positive half,
-not just its negative half.** Section 4 has the measurements; $F\odot G$, not
-$f\odot g$, is first on both teachers, and bilinear is last on both.
+The last row survives both, at the largest size and with no cell that fails:
+**the gate's linear positive half is what costs.** The row above it survives
+almost as well but has one cell (gate `T`, iterated map) where it buys nothing.
+Both rows were added after sections 2 and 3 were written, and both required
+gates that sections 2 and 3 did not contain. Section 4 has the measurements;
+`TG` and `Tg`, not $f\odot g$, are first, and bilinear is last on both.
 
 Earlier measurements at a smaller scope, kept for the record:
 
@@ -103,49 +139,95 @@ Earlier measurements at a smaller scope, kept for the record:
 |$\tanh$ product (depth 32)|4.5×|
 |iterated map (depth 16)|1.33×|
 
-## 4. Which half of $f\odot g$ does the work
+## 4. The linear positive half, on each branch
 
-$f\odot g$ has two ingredients that are easy to change together: the gate's
-$\tanh$ shoulder and the value branch's one-sided $\operatorname{asinh}$. Changing
-one at a time, depth 16, 8 seeds, iterated-map teacher:
+`F`, `f` and `g` are all linear above zero. `T` and `G` are not. Removing that
+half is a single change that can be made on either branch, and the two branches
+give different answers.
 
-| | gate | value | loss | vs best |
-|---|---|---|---|---|
-|$F\odot G$|$\max(ax,-b)$|$\operatorname{asinh}$ both sides|**0.02506 ± 0.00055**|—|
-|$f\odot G$|$f$ exact|$\operatorname{asinh}$ both sides|0.02607 ± 0.00074|+4.0%|
-|$F\odot g$|$\max(ax,-b)$|$g$ exact|0.05071 ± 0.00103|+102%|
-|$f\odot g$|$f$ exact|$g$ exact|0.05236 ± 0.00117|+109%|
+All 8 seeds, parameter-matched.
 
-The same four on the $\tanh$-product teacher, depth 32, 8 seeds, with
-silu⊙silu and $f\odot g$ from section 2 rerun alongside them and reproducing
-their published values exactly:
+**tanh-product teacher, depth 32**
 
-| | gate | value | loss | vs best |
-|---|---|---|---|---|
-|$F\odot G$|$\max(ax,-b)$|$\operatorname{asinh}$ both sides|**0.00886 ± 0.00019**|—|
-|$f\odot G$|$f$ exact|$\operatorname{asinh}$ both sides|0.00954 ± 0.00019|+7.7% (7.2 σ)|
-|silu⊙silu|silu|silu|0.01566 ± 0.00086|+77% (22 σ)|
-|$f\odot g$|$f$ exact|$g$ exact|0.01575 ± 0.00064|+78% (29 σ)|
-|$F\odot g$|$\max(ax,-b)$|$g$ exact|0.01848 ± 0.00048|+109% (53 σ)|
+| gate | value | loss | |
+|---|---|---|---|
+|`T`|`G`|**0.00162 ± 0.00011**|—|
+|`T`|`g`|0.00483 ± 0.00020|+198% (40 σ)|
+|`T`|`i`|0.00511 ± 0.00010|+215%|
+|`F`|`G`|0.00886 ± 0.00019|+447% (93 σ)|
+|`f`|`G`|0.00954 ± 0.00019|+489%|
+|`s`|`s`|0.01566 ± 0.00086|+867%|
+|`f`|`g`|0.01575 ± 0.00064|+872%|
+|`F`|`g`|0.01848 ± 0.00048|+1041%|
+|`s`|`i` — SwiGLU|0.07117 ± 0.00031|+4294%|
 
-**The value branch's positive half is the whole effect, on both teachers.**
-Compressing it as well as the negative half — $\operatorname{asinh}$ on both
-sides instead of a linear positive side — is worth 2.0–2.1× on the iterated map
-and 1.65–2.09× on the $\tanh$ product. The sign never changes.
+**iterated-map teacher, depth 16**
 
-**The gate is not robust, and it interacts with the value branch.** Replacing
-the gate's $\tanh$ with $\max(ax,-b)$ is worth +4% on the iterated map in both
-columns, but on the $\tanh$ product it is **−17% (worse, 9.6 σ)** when the value
-branch is the one-sided $g$ and **+7% (better, 7.2 σ)** when it is the
-both-sides $G$. The two changes are not additive.
+| gate | value | loss | |
+|---|---|---|---|
+|`T`|`g`|**0.01676 ± 0.00073**|—|
+|`T`|`G`|0.01747 ± 0.00074|+4.2% (1.9 σ — a tie)|
+|`F`|`G`|0.02506 ± 0.00055|+50% (23 σ)|
+|`f`|`G`|0.02607 ± 0.00074|+56%|
+|`T`|`i`|0.02643 ± 0.00086|+58%|
+|`F`|`g`|0.05071 ± 0.00103|+203%|
+|`f`|`g`|0.05236 ± 0.00117|+212% (73 σ)|
+|`s`|`i` — SwiGLU|0.06952 ± 0.00112|+315%|
 
-This was first read the wrong way round. $F\odot G$ beat $f\odot g$ by 2.1× and
-the gain was attributed to $\max(ax,-b)$, because both changes were made at
-once. The rows above are the same run with the two changes separated.
+### What each removal is worth
 
-A consequence for the gate: if $\max$ is worth 4%, the gate's exact shape is
-nearly free to choose, and `silu` is a candidate there ($\mathrm{silu}\odot G$).
-That has not been measured.
+Gate, `f` → `T`, holding the value branch fixed:
+
+| | value `g` | value `G` |
+|---|---|---|
+|tanh product|**3.26×**|**5.89×**|
+|iterated map|**3.12×**|**1.49×**|
+
+Value, `g` → `G`, holding the gate fixed:
+
+| | gate `f` | gate `F` | gate `T` |
+|---|---|---|---|
+|tanh product|**1.65×**|**2.09×**|**2.98×**|
+|iterated map|**2.01×**|**2.02×**|0.96× — no effect|
+
+**The gate's linear half costs more, and costs it everywhere.** All four gate
+cells are gains, on both teachers, 1.5–5.9×. The value branch is 1.0–3.0× and
+has one cell where it does nothing at all.
+
+**Section 2 and section 3 were measured inside a family where every gate was
+linear above zero.** `f` and `F` differ only below zero, so comparing them
+measured the tanh shoulder, not the linear half — which is why section 4 first
+reported the gate as worth 4%. With `T` in the comparison the ordering reverses:
+the gate is the larger effect.
+
+### The two changes are redundant, not additive
+
+On the iterated map:
+
+| | loss |
+|---|---|
+|`Ti` — gate fixed only|0.02643 ± 0.00086|
+|`fG` — value fixed only|0.02607 ± 0.00074|
+|`FG`|0.02506 ± 0.00055|
+|`TG` — both|0.01747 ± 0.00074|
+
+`Ti` and `fG` are 0.9 σ apart: fixing either branch alone lands in the same
+place. Doing both is a further 1.5×, not the 3×1.5 that independent effects
+would give.
+
+### Two things this does not establish
+
+**`T` carries two learned parameters where `silu` carries none.** Parameter
+counts are matched in the accounting, but `T` can learn its slope and its
+saturation level and `silu` cannot. Whether the gain comes from boundedness or
+from the learnable scale is **not separated here**; a fixed `tanh` (a = b = 1)
+would separate it and has not been run.
+
+**The gap against SwiGLU is largest where the teacher is a tanh product**
+(13.9× for `Ti`, against 2.6× on the iterated map). SwiGLU wins on real language
+against exactly this kind of bounded gate. A 14× in the other direction on a
+synthetic teacher is more likely a statement about the teacher than about
+SwiGLU. Section 8.
 
 ## 5. Two explanations tested and eliminated
 
