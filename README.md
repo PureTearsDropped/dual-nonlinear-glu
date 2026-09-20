@@ -1,5 +1,8 @@
 # dual-nonlinear-glu
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22851806.svg)](https://doi.org/10.5281/zenodo.22851806)
+[![License: 0BSD](https://img.shields.io/badge/License-0BSD-blue.svg)](LICENSE)
+
 SwiGLU passes its **value** branch through unchanged:
 
 $$h \leftarrow h + W_d\Big(\underbrace{\mathrm{silu}(W_g h)}_{\text{gate}}\ \odot\ \underbrace{(W_u h)}_{\text{value: identity}}\Big)$$
@@ -98,6 +101,29 @@ one-nonlinearity baseline, and an ablation with the interior zeroed, before
 comparing anything. An earlier version of this work spent a day on a task that a
 network with *all weights zero* solved best. `bench.py --diagnose` runs the
 check; SPEC.md section 6 lists the rest.
+
+## Related
+
+[relu-tanh-asinh](https://github.com/PureTearsDropped/relu-tanh-asinh)
+([10.5281/zenodo.22847921](https://doi.org/10.5281/zenodo.22847921)) applies the
+same $f$ and $g$ **in series** — $f(C\,g(h))$ — rather than as a product. That
+construction loses to SwiGLU; this one does not. The series version also carries
+the third-derivative analysis of the pair and the residual-branch initialisation
+result in more detail.
+
+## Citing
+
+```bibtex
+@software{dual_nonlinear_glu,
+  author  = {PureTearsDropped},
+  title   = {dual-nonlinear-glu: making the value branch of a gated layer nonlinear},
+  year    = {2026},
+  doi     = {10.5281/zenodo.22851806},
+  url     = {https://github.com/PureTearsDropped/dual-nonlinear-glu}
+}
+```
+
+The DOI above always resolves to the latest version.
 
 ## Licence
 

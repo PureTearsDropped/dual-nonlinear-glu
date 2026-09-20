@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+title: "dual-nonlinear-glu: making the value branch of a gated layer nonlinear"
+message: "If you use this work, please cite it using these metadata."
+type: software
+authors:
+  - alias: PureTearsDropped
+repository-code: "https://github.com/PureTearsDropped/dual-nonlinear-glu"
+license: 0BSD
+doi: 10.5281/zenodo.22851806
+abstract: >-
+  SwiGLU passes its value branch through unchanged. Replacing that identity
+  with a second nonlinearity is worth 3.6-4.5x on a teacher-student
+  regression benchmark; which nonlinearity is worth a further 8-9%. The
+  gate uses a function that saturates below zero (tanh) and the value a
+  function that grows logarithmically below zero (asinh); both are linear
+  above zero, C^2 but not C^3, with four scale parameters learned per
+  channel. The block's output is the mixed second derivative of an
+  elementary potential F(u)G(v), which is not the case for SwiGLU. The
+  headline margin is shown to be largely a structural match with a product
+  teacher, and two competing explanations are tested and eliminated. Also
+  recorded: initialising the residual branch at 1/sqrt(depth) outweighs
+  every activation choice measured, and a benchmark checklist for detecting
+  tasks that do not need depth.
+keywords:
+  - activation function
+  - gated linear unit
+  - SwiGLU
+  - residual network
+  - benchmark methodology
+  - negative results
+references:
+  - type: software
+    title: "relu-tanh-asinh: a conjugate f/g residual layer"
+    doi: 10.5281/zenodo.22847921
