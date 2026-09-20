@@ -2,10 +2,11 @@ cff-version: 1.2.0
 title: "dual-nonlinear-glu: revisiting the linear value branch of gated layers"
 message: "If you use this work, please cite it using these metadata."
 type: software
-version: 0.2.0
+version: 0.2.3
 date-released: 2026-09-20
 authors:
-  - alias: PureTearsDropped
+  - name: "PureTearsDropped"
+    alias: PureTearsDropped
 repository-code: "https://github.com/PureTearsDropped/dual-nonlinear-glu"
 license: 0BSD
 abstract: >-
@@ -63,6 +64,6 @@ references:
   - type: software
     title: "relu-tanh-asinh: a conjugate f/g residual layer"
     authors:
-      - alias: PureTearsDropped
+      - name: "PureTearsDropped"
     doi: 10.5281/zenodo.22847920
     repository-code: "https://github.com/PureTearsDropped/relu-tanh-asinh"
