@@ -88,7 +88,8 @@ class Gated(_Stack):
 
     def _br(self, t, which, a, b, A, B):
         return {"f": lambda: f_ab(t, a, b), "g": lambda: g_AB(t, A, B),
-                "s": lambda: F.silu(t),     "i": lambda: t}[which]()
+                "s": lambda: F.silu(t),     "i": lambda: t,
+                "r": lambda: F.relu(t),     "e": lambda: F.gelu(t)}[which]()
 
     def forward(self, x):
         h = self.head(x)
@@ -144,6 +145,10 @@ MODELS = {
     "sg": lambda S, **k: Gated(S, order="sg", **k),      # silu gate, g value
     "fi": lambda S, **k: Gated(S, order="fi", **k),      # f gate, identity value
     "swiglu": lambda S, **k: Gated(S, order="si", **k),  # silu gate, identity value
+    "bilinear": lambda S, **k: Gated(S, order="ii", **k),  # Shazeer 2020: both linear
+    "geglu": lambda S, **k: Gated(S, order="ei", **k),
+    "reglu": lambda S, **k: Gated(S, order="ri", **k),
+    "ss": lambda S, **k: Gated(S, order="ss", **k),      # silu on both branches
     "gelu": lambda S, **k: MLP(S, act="gelu", **k),
     "relu": lambda S, **k: MLP(S, act="relu", **k),
     "silu": lambda S, **k: MLP(S, act="silu", **k),

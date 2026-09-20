@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "dual-nonlinear-glu: making the value branch of a gated layer nonlinear"
+title: "dual-nonlinear-glu: revisiting the linear value branch of gated layers"
 message: "If you use this work, please cite it using these metadata."
 type: software
 authors:
@@ -8,19 +8,22 @@ repository-code: "https://github.com/PureTearsDropped/dual-nonlinear-glu"
 license: 0BSD
 doi: 10.5281/zenodo.22851806
 abstract: >-
-  SwiGLU passes its value branch through unchanged. Replacing that identity
-  with a second nonlinearity is worth 3.6-4.5x on a teacher-student
-  regression benchmark; which nonlinearity is worth a further 8-9%. The
-  gate uses a function that saturates below zero (tanh) and the value a
-  function that grows logarithmically below zero (asinh); both are linear
-  above zero, C^2 but not C^3, with four scale parameters learned per
-  channel. The block's output is the mixed second derivative of an
-  elementary potential F(u)G(v), which is not the case for SwiGLU. The
-  headline margin is shown to be largely a structural match with a product
-  teacher, and two competing explanations are tested and eliminated. Also
-  recorded: initialising the residual branch at 1/sqrt(depth) outweighs
-  every activation choice measured, and a benchmark checklist for detecting
-  tasks that do not need depth.
+  Gated layers in transformers keep their value branch linear: SwiGLU is
+  silu(W_g h) * (W_u h). Making both branches nonlinear is not a new design --
+  it is the Gated Tanh Unit, which Dauphin et al. (2017) measured and rejected
+  because both branches contribute a gradient downscaling factor, and the
+  GLU -> GEGLU -> SwiGLU line descends from that rejection. On a synthetic
+  teacher-student benchmark with a residual and a 1/sqrt(depth) branch
+  initialisation, that rejection does not reproduce. Two teachers, however,
+  give opposite accounts of why: on a product teacher the effect is dual
+  nonlinearity itself (4.5x, and silu*silu ties the proposed pair), while on a
+  non-product teacher dual nonlinearity buys nothing and only the particular
+  pair helps (33%). The block's output is the mixed second derivative of an
+  elementary potential F(u)G(v), which is not the case for SwiGLU. Also
+  recorded: initialising the residual branch at 1/sqrt(depth) outweighs every
+  activation choice measured; curvature-aware ternary rounding was derived,
+  corrected, and failed; and a benchmark checklist for detecting tasks that do
+  not need depth.
 keywords:
   - activation function
   - gated linear unit
@@ -28,6 +31,7 @@ keywords:
   - residual network
   - benchmark methodology
   - negative results
+  - gated tanh unit
 references:
   - type: software
     title: "relu-tanh-asinh: a conjugate f/g residual layer"

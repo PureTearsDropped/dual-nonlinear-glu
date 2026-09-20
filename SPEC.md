@@ -6,9 +6,13 @@
 
 $$\boxed{\;h \leftarrow h + W_d\Big(f_{a,b}\big(W_g h\big)\ \odot\ g_{A,B}\big(W_u h\big)\Big) + \beta\;}$$
 
-SwiGLU is the special case $f=\mathrm{silu}$, $g=\mathrm{id}$. **The change is that the
-value branch is nonlinear too**; that is where most of the measured effect comes
-from (RESULTS 2).
+SwiGLU is the special case $f=\mathrm{silu}$, $g=\mathrm{id}$; the Gated Tanh Unit
+of Dauphin et al. (2017) is $f=\tanh$, $g=\sigma$.
+**Both branches nonlinear is not a new design** — it is GTU, which that paper
+measured and rejected because $\tanh'$ and $\sigma'$ both downscale the gradient.
+What is specified here is one instance of that family whose effect on two
+synthetic teachers is reported in RESULTS; the two teachers disagree about
+whether the dual nonlinearity or the particular pair is what matters.
 
 $W_g,W_u\in\mathbb{R}^{m\times n}$, $W_d\in\mathbb{R}^{n\times m}$. Taking
 $m=n/3$ matches the parameter count of a plain MLP block.
@@ -76,6 +80,20 @@ What this buys `[untested]`:
 
 What it does **not** buy: this is a *local* potential per gate. The network is not
 an energy-based model and nothing about stability follows from it.
+
+### 1.1 On the origin
+
+Near zero, $f(u)\approx au$ and $g(v)\approx v/A$, so the branch output is
+$\approx(a/A)uv$ — **bilinear, not identity**. The identity path is the residual.
+In the all-positive quadrant $f$ and $g$ are *exactly* linear, so the block is
+exactly bilinear there; curvature appears only when a coordinate crosses zero.
+SwiGLU by contrast is curved everywhere, since $\mathrm{silu}$ is.
+
+Tying $A=a$ makes the series composition $g(f(x))$ exactly the identity on the
+positive side. **It is measurably worse** — +5.7% at depth 4 and +6.8% at depth 32
+in the series construction — because $a$ also sets the slope entering $\tanh$ on
+the negative side, and constraining it for the sake of the positive side costs
+more than the tidiness is worth.
 
 ## 4. Initialisation
 

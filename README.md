@@ -3,12 +3,17 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22851806.svg)](https://doi.org/10.5281/zenodo.22851806)
 [![License: 0BSD](https://img.shields.io/badge/License-0BSD-blue.svg)](LICENSE)
 
-SwiGLU passes its **value** branch through unchanged:
+Revisiting a design choice the field made in 2017 and has kept since: **the value
+branch of a gated layer is linear**.
 
-$$h \leftarrow h + W_d\Big(\underbrace{\mathrm{silu}(W_g h)}_{\text{gate}}\ \odot\ \underbrace{(W_u h)}_{\text{value: identity}}\Big)$$
+$$\text{SwiGLU:}\quad h \leftarrow h + W_d\Big(\mathrm{silu}(W_g h)\ \odot\ \underbrace{(W_u h)}_{\text{linear}}\Big)$$
 
-Putting a second nonlinearity there is worth **3.6–4.5×** on the benchmark here;
-*which* nonlinearity is worth a further 8–9%.
+Making it nonlinear too is not a new idea — it is the **Gated Tanh Unit**, and
+Dauphin et al. (2017) measured it, argued against it on gradient grounds, and the
+GLU → GEGLU → SwiGLU line descends from that rejection. See [Prior work](#prior-work).
+
+On the synthetic benchmark here, with a residual and a $1/\sqrt{L}$ branch
+initialisation, **that rejection does not reproduce**.
 
 $$h \leftarrow h + W_d\Big(f_{a,b}(W_g h)\ \odot\ g_{A,B}(W_u h)\Big)$$
 
@@ -16,44 +21,77 @@ $$f_{a,b}(x)=\begin{cases}a x & x\ge0\\ b\tanh(ax/b) & x<0\end{cases}
 \qquad
 g_{A,B}(y)=\begin{cases}y/A & y\ge0\\ (B/A)\,\mathrm{asinh}(y/B) & y<0\end{cases}$$
 
-$f$ saturates below zero, $g$ grows logarithmically below zero; both are linear
-above and $C^2$ but not $C^3$; $a,b,A,B$ are learned per channel.
+## Results
 
-## Result
+8 seeds, all models at identical parameter counts. Normalised MSE, lower is better.
 
-Depth 32, 8 seeds, matched parameters (~136k), teacher–student regression.
-Normalised MSE, lower is better:
+**Teacher: a product of two $\tanh$ projections, depth 32**
 
-| gate | value | loss |
+| gate | value | loss | |
+|---|---|---|---|
+|silu|silu|**0.01566 ± 0.00086**|−0.2 σ vs $f\odot g$|
+|$f$|$g$|**0.01575 ± 0.00064**|—|
+|$g$|$g$|0.01697 ± 0.00056|+7.7% (4.0 σ)|
+|$f$|$f$|0.01717 ± 0.00102|+9.0% (3.3 σ)|
+|silu|$g$|0.01969 ± 0.00084|+25% (10.5 σ)|
+|$f$|identity|0.04925 ± 0.00072|+213%|
+|silu|identity — **SwiGLU**|0.07117 ± 0.00031|+352%|
+|identity|identity — **bilinear**|0.08786 ± 0.00101|+458%|
+
+**Teacher: an iterated map, no product at all, depth 16**
+
+| gate | value | loss | |
+|---|---|---|---|
+|$f$|$g$|**0.05236 ± 0.00117**|—|
+|silu|identity — **SwiGLU**|0.06952 ± 0.00112|+33% (30 σ)|
+|silu|silu|0.07132 ± 0.00145|+36% (29 σ)|
+|identity|identity — **bilinear**|0.09263 ± 0.00034|+77%|
+
+## What the two tables together say
+
+**The two teachers disagree about which ingredient matters.**
+
+| | $\tanh$-product teacher | iterated-map teacher |
 |---|---|---|
-|$f$|$g$|**0.01575 ± 0.00064**|
-|$g$|$g$|0.01697 ± 0.00056 (+7.7%)|
-|$f$|$f$|0.01717 ± 0.00102 (+9.0%)|
-|silu|$g$|0.01969 ± 0.00084 (+25%)|
-|$f$|identity|0.04925 ± 0.00072 (+213%)|
-|silu|identity — **SwiGLU**|0.07117 ± 0.00031 (+352%)|
+|making the value branch nonlinear at all|**4.5×**|**nothing** (silu⊙silu ≈ SwiGLU)|
+|using $f$ and $g$ specifically|**nothing** (ties silu⊙silu)|**33%**|
 
-All six have exactly 136,392 parameters.
+So neither "dual nonlinearity is the point" nor "this pair is the point" survives
+both tasks. What survives both is narrower: **$f\odot g$ is first in both**, and
+bilinear (no nonlinearity anywhere) is last in both — the product alone is not
+enough here, unlike in Dauphin et al., where bilinear beat a linear network by 40
+perplexity points and lost to GLU by 20.
 
-The ordering holds on a teacher with no product structure at all, where
-$f\odot g$ beats $f\odot f$ by 8.1 σ and $g\odot g$ by 16 σ.
+The 2017 gradient argument against dual nonlinearity — that both branches
+contribute a downscaling factor and the product vanishes with depth — does not
+reproduce at depth 32 here. **Why it does not is unresolved.** A natural guess is
+that $f$ and $g$ have derivative exactly $a$ and $1/A$ on their entire positive
+half, so nothing downscales there, unlike $\tanh'\cdot\sigma'$ in GTU. But
+silu⊙silu has no such property and ties $f\odot g$ on one of the two teachers, so
+that explanation is not supported either.
 
-## Read this before quoting the headline number
+## Prior work
 
-**The 4.5× margin over SwiGLU is mostly a structural match with the teacher.**
-On a product teacher, a gated student wins partly by resembling it. Removing the
-product:
+| | form | finding |
+|---|---|---|
+|**Gated Tanh Unit** — Gated PixelCNN (2016), named in Dauphin et al. (2017)|$\tanh(Wx)\odot\sigma(Vx)$|**both branches nonlinear**|
+|**GLU** — [Dauphin et al. 2017](https://arxiv.org/abs/1612.08083)|$(Wx)\odot\sigma(Vx)$|**better than GTU**; the value branch is kept linear deliberately|
+|bilinear — Mnih & Hinton (2007), measured in Dauphin et al.|$(Wx)\odot(Vx)$|beats linear by 40 ppl, loses to GLU by 20|
+|**GEGLU / SwiGLU** — [Shazeer 2020](https://arxiv.org/abs/2002.05202)|$\mathrm{GELU}(xW)\odot xV$, $\mathrm{Swish}(xW)\odot xV$|value branch still linear; no both-nonlinear variant tested|
 
-| teacher | $f\odot g$ vs SwiGLU |
-|---|---|
-|relu product|44×|
-|$\tanh$ product|4.5×|
-|**iterated map (no product)**|**1.33×**|
+Dauphin et al.'s argument, verbatim:
 
-**33% is the honest number**, and it is one synthetic task family — no language,
-no vision, no real data. Two competing explanations were tested and eliminated
-(activation growth with depth; the extra per-channel parameters $a,b,A,B$), which
-is what makes the remaining effect worth recording, not the size of the headline.
+> The gradient of the LSTM-style gating of which we dub gated tanh unit (GTU) is
+> $\nabla[\tanh(X)\otimes\sigma(X)] = \tanh'(X)\nabla X\otimes\sigma(X)+\sigma'(X)\nabla X\otimes\tanh(X)$.
+> Notice that it gradually vanishes as we stack layers because of the downscaling
+> factors $\tanh'(X)$ and $\sigma'(X)$. In contrast, the gradient of the gated
+> linear unit ... has a path $\nabla X\otimes\sigma(X)$ without downscaling for
+> the activated gating units ... a multiplicative skip connection which helps
+> gradients flow through the layers.
+
+**Dual-nonlinear gating is not new. What is reported here is that the 2017
+conclusion does not hold on this benchmark, and that the two teachers disagree
+about why.**
 
 ## The potential
 
@@ -62,13 +100,26 @@ With $F'=f$ and $G'=g$, the block's output is a mixed second derivative:
 $$\Phi(u,v)=F(u)G(v),\qquad \frac{\partial^2\Phi}{\partial u\,\partial v}=f(u)g(v)$$
 
 verified to $1.6\times10^{-9}$. For this pair $F$ and $G$ are elementary
-($\ln\cosh$ and an $\mathrm{asinh}$ integral); for SwiGLU the corresponding $F$
-needs a dilogarithm. So the output can be read as the **cross-curvature of a
-potential in two features** rather than as "gate times value", and the potential
-is computable at training time while never appearing in the forward pass.
+($\ln\cosh$, and an $\mathrm{asinh}$ integral); for silu the corresponding
+antiderivative needs a dilogarithm. So $\Phi$ is computable at training time for
+$f\odot g$ and not for SwiGLU, and never appears in the forward pass.
 
-This is a *local* potential per gate. The network is **not** an energy-based
-model and no stability guarantee follows from it.
+This is a *local* potential per gate. The network is **not** an energy-based model
+and no stability guarantee follows.
+
+## Limits
+
+- one synthetic task family (teacher–student regression, width 64, input 32);
+  **no language, no vision, no real data**
+- two teachers give **opposite** accounts of which ingredient matters
+- the 2017 gradient argument is contradicted here but not explained
+- $\Phi$ has been verified as an identity and logged; **never used as a
+  regulariser or objective**
+- $a,b,A,B$ barely move during training — the initialisation does the work, and
+  it is not understood why the learning does not use those degrees of freedom
+- curvature-aware ternary rounding was tried and **failed** (RESULTS 6)
+- no comparison against LayerNorm'd blocks, which is how real transformers avoid
+  the instability that forced the $1/\sqrt{L}$ init here
 
 ## Files
 
@@ -76,8 +127,8 @@ model and no stability guarantee follows from it.
 |---|---|
 |[`dnglu.py`](dnglu.py)|reference implementation, ~120 lines|
 |[`SPEC.md`](SPEC.md)|construction, initialisation, the potential, diagnostics|
-|[`RESULTS.md`](RESULTS.md)|measurements, including what was ruled out and what is not shown|
-|[`bench.py`](bench.py)|benchmark with all baselines and ablations|
+|[`RESULTS.md`](RESULTS.md)|all measurements, what was ruled out, what failed|
+|[`bench.py`](bench.py)|benchmark with every baseline above|
 
 ```python
 from dnglu import DualGLUNet
@@ -85,45 +136,46 @@ model = DualGLUNet(d_in=32, d_out=8, d_model=64, depth=32)
 ```
 
 ```bash
-python bench.py --diagnose                      # is the task even usable?
-python bench.py --depth 32 --seeds 8 --model fg,swiglu
-python bench.py --depth 16 --seeds 8 --model fg,ff,gg,swiglu --teacher deep
+python bench.py --diagnose                     # is the task even usable?
+python bench.py --depth 32 --seeds 8 --model fg,ss,swiglu,bilinear
+python bench.py --depth 16 --seeds 8 --model fg,ss,swiglu,bilinear --teacher deep
 ```
 
-## Two things that matter more than the activation
+## Two things that mattered more than the activation
 
-**Initialise $W_d$ at $1/\sqrt{L}$.** Worth 30–41% to plain MLPs at depth 64, and
-SwiGLU reaches NaN by depth 16 without it (there is no normalisation in these
-blocks). This dominated every activation choice measured.
+**Initialise $W_d$ at $1/\sqrt{L}$.** Worth 30–41% to plain MLPs at depth 64;
+SwiGLU reaches NaN by depth 16 without it. This dominated every activation choice
+measured.
 
 **Check that your benchmark needs depth.** Measure a linear baseline, a
 one-nonlinearity baseline, and an ablation with the interior zeroed, before
 comparing anything. An earlier version of this work spent a day on a task that a
-network with *all weights zero* solved best. `bench.py --diagnose` runs the
-check; SPEC.md section 6 lists the rest.
+network with *all weights zero* solved best. `bench.py --diagnose` runs the check;
+SPEC.md section 6 has the rest.
 
 ## Related
 
 [relu-tanh-asinh](https://github.com/PureTearsDropped/relu-tanh-asinh)
 ([10.5281/zenodo.22847921](https://doi.org/10.5281/zenodo.22847921)) applies the
 same $f$ and $g$ **in series** — $f(C\,g(h))$ — rather than as a product. That
-construction loses to SwiGLU; this one does not. The series version also carries
-the third-derivative analysis of the pair and the residual-branch initialisation
-result in more detail.
+construction loses to SwiGLU. It also carries the third-derivative analysis of the
+pair and the residual-initialisation result in more detail.
 
 ## Citing
 
 ```bibtex
 @software{dual_nonlinear_glu,
   author  = {PureTearsDropped},
-  title   = {dual-nonlinear-glu: making the value branch of a gated layer nonlinear},
+  title   = {dual-nonlinear-glu: revisiting the linear value branch of gated layers},
   year    = {2026},
   doi     = {10.5281/zenodo.22851806},
   url     = {https://github.com/PureTearsDropped/dual-nonlinear-glu}
 }
 ```
 
-The DOI above always resolves to the latest version.
+**Note:** the archived v0.1.0 predates the prior-work section and the
+silu⊙silu and bilinear baselines. Its framing overstates the novelty. `main` is
+corrected.
 
 ## Licence
 
