@@ -1,0 +1,32 @@
+{
+  "title": "dual-nonlinear-glu: revisiting the linear value branch of gated layers",
+  "upload_type": "software",
+  "description": "<p>Gated layers in transformers keep their value branch linear: SwiGLU is\n<code>silu(W_g h) * (W_u h)</code>. Making both branches nonlinear is not a new design &mdash; it is\nthe Gated Tanh Unit, which Dauphin et al. (2017) measured and rejected because both branches\ncontribute a gradient downscaling factor, and the GLU &rarr; GEGLU &rarr; SwiGLU line descends from\nthat rejection. On a synthetic teacher&ndash;student benchmark with a residual and a\n1/sqrt(depth) branch initialisation, that rejection does not reproduce.</p>\n\n<p><strong>The larger finding is about a different property.</strong> The proposed pair f and g,\nlike max(ax,-b) and the identity, are all linear <em>above</em> zero, and it is that linear positive\nhalf which costs. Removing it from the gate &mdash; a plain b&middot;tanh(a x/b) on both sides &mdash;\nis worth 1.5&ndash;5.9&times; in all four cells of two teachers by two value branches; removing it from\nthe value branch is 1.0&ndash;3.0&times;, with one cell where it does nothing. The two changes are\nredundant rather than additive. This is the one effect that two teachers giving otherwise opposite\naccounts both support.</p>\n\n<p><strong>A control separates the mechanism.</strong> A fixed tanh, with nothing learned, keeps most\nof the gain when the value branch is nonlinear but falls below SwiGLU when it is not, because it sits\nin its own linear region (median argument 0.378) while a learned gate drives itself into saturation\n(median 3.2). What the learned scale buys is the operating point, and that decides the outcome only\nwhen the gate is the sole nonlinearity. The saturated gate is <em>not</em> a sign function &mdash;\nthat was tested and is wrong, at 3.70&times; &mdash; but a clamp costs only 1.19&times;, and training\nwith the clamp from the start costs 9%, so the gate needs no transcendental at all.</p>\n\n<p><strong>Also recorded.</strong> asinh in the value branch can be evaluated by polynomials alone,\nwith segment boundaries taken from the measured argument distribution rather than from the shape of\nasinh, reproducing a trained network's loss to seven figures and costing 30&times; on a GPU, where it\nmust not be used; the block's output is the mixed second derivative of an elementary potential\nF(u)G(v), which survives the both-sides form; initialising the residual branch at 1/sqrt(depth)\noutweighs every activation choice measured; curvature-aware ternary rounding was derived, corrected,\nand failed; and a benchmark checklist for detecting tasks that do not need depth.</p>\n\n<p><strong>Corrections to v0.1.0</strong> are recorded in place: two measured statements about GPU\nkernel cost, an inference-time substitution described as free that costs 4.4%, and a 2.1&times; gain\nattributed to the wrong one of two simultaneous changes.</p>",
+  "creators": [
+    {
+      "name": "PureTearsDropped"
+    }
+  ],
+  "license": "0bsd",
+  "access_right": "open",
+  "keywords": [
+    "activation function",
+    "gated linear unit",
+    "SwiGLU",
+    "gated tanh unit",
+    "residual network",
+    "benchmark methodology",
+    "negative results",
+    "polynomial approximation",
+    "Remez algorithm",
+    "hardware inference"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.5281/zenodo.22847920",
+      "relation": "references",
+      "scheme": "doi",
+      "resource_type": "software"
+    }
+  ]
+}
