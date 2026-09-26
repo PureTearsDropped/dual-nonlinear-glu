@@ -368,8 +368,14 @@ criterion tried.**
 
 ## 8. What this does not show
 
-- one task family (synthetic regression, width 64, input dim 32); **no language,
-  no vision, no real data**
+- sections 1–9 are one task family (synthetic regression, width 64, input dim
+  32) with **no normalisation anywhere**. A character-level language model with
+  LayerNorm was measured afterwards and **reverses most of what follows** —
+  see [`LM.md`](LM.md). The short version: with a LayerNorm in place, SwiGLU
+  wins, the value branch's `asinh` buys nothing, the bounded gate loses, and the
+  per-channel learned scale is worth zero. Every mechanism that works below is a
+  way of setting a per-channel operating point, and normalisation sets it
+  already. That file is not yet integrated into these sections
 - **two teachers disagree about which ingredient matters** (section 3)
 - **dual-nonlinear gating is not new**: it is the Gated Tanh Unit, measured and
   rejected by Dauphin et al. (2017) on the grounds that both branches contribute

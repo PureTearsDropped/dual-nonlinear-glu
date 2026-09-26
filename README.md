@@ -199,8 +199,12 @@ and no stability guarantee follows.
 
 ## Limits
 
-- one synthetic task family (teacher–student regression, width 64, input 32);
-  **no language, no vision, no real data**
+- the tables above are one synthetic task family (teacher–student regression,
+  width 64, input 32) with **no normalisation**. On a character-level language
+  model with LayerNorm, **SwiGLU wins and most of these effects vanish** —
+  [`LM.md`](LM.md) has the measurements and the one explanation that covers
+  them: every mechanism here sets a per-channel operating point, and a
+  LayerNorm sets it already
 - two teachers give **opposite** accounts of which ingredient matters
 - the 2017 gradient argument is contradicted here but not explained
 - $\Phi$ has been verified as an identity and logged; **never used as a
@@ -228,6 +232,7 @@ and no stability guarantee follows.
 |[`RESULTS.md`](RESULTS.md)|all measurements, what was ruled out, what failed|
 |[`bench.py`](bench.py)|benchmark with every baseline above|
 |[`APPROX.md`](APPROX.md)|asinh by polynomials only, for hardware without a transcendental unit|
+|[`LM.md`](LM.md)|enwik8 with LayerNorm — the real task, which reverses most of RESULTS|
 
 ```python
 from dnglu import DualGLUNet
